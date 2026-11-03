@@ -8,6 +8,88 @@ PROJECT_DIR="$HOME/Apollo-Linux"
 LAUNCHER="$HOME/.local/share/applications/hermes.desktop"
 
 # ------------------------------------------------------------
+# 0. Install manifest
+# ------------------------------------------------------------
+# Every change this script makes to the system is recorded here,
+# so uninstall.sh can remove exactly that and nothing else.
+# Anything that already existed before installation is NOT recorded.
+#
+# Format: <type><TAB><value>, one entry per line.
+
+STATE_DIR="$HOME/.local/state/smart-device-display"
+MANIFEST="$STATE_DIR/installed.list"
+BACKUP_DIR="$STATE_DIR/backup"
+
+mkdir -p "$STATE_DIR"
+touch "$MANIFEST"
+
+# record <type> <value>
+record() {
+    local entry
+    entry="$1"$'\t'"$2"
+    grep -qxF "$entry" "$MANIFEST" || printf '%s\n' "$entry" >> "$MANIFEST"
+}
+
+# Save a copy of an existing system file before overwriting it,
+# so uninstall.sh can restore the original.
+backup_file() {
+    local src="$1"
+    local dst="$BACKUP_DIR$1"
+
+    # Created by this script on a previous run: nothing to restore
+    grep -qxF "rootfile"$'\t'"$src" "$MANIFEST" && return 0
+
+    if [ ! -e "$dst" ]; then
+        mkdir -p "$(dirname "$dst")"
+        cp -p "$src" "$dst"
+    fi
+
+    record restore "$src"
+}
+
+installed_packages() {
+    dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 2>/dev/null \
+        | awk '$1 ~ /^ii/ { print $2 }' \
+        | sort
+}
+
+# Install apt packages and record every package that was not
+# installed before, including automatically pulled dependencies.
+#
+# A new package is NOT recorded if a package that was already installed
+# now depends on it. Example: the toolchain PPA upgrades libgcc-s1 and
+# libstdc++6, which then require the new gcc-16-base. Removing it later
+# would break the whole system, including apt itself.
+apt_install() {
+    local before after pkg
+
+    before="$(installed_packages)"
+    sudo apt install -y "$@"
+    after="$(installed_packages)"
+
+    while read -r pkg; do
+        [ -z "$pkg" ] && continue
+
+        # Only real dependencies count, not Breaks/Replaces/Recommends
+        if apt-cache rdepends --installed \
+                --no-recommends --no-suggests --no-conflicts \
+                --no-breaks --no-replaces --no-enhances \
+                "$pkg" 2>/dev/null \
+            | tail -n +3 \
+            | sed 's/^[ |]*//; s/:.*//' \
+            | grep -qxFf <(printf '%s\n' "$before" | sed 's/:.*//'); then
+
+            echo "Not recorded (required by previously installed packages): $pkg"
+            continue
+        fi
+
+        record apt "$pkg"
+    done < <(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+}
+
+echo "Install manifest: $MANIFEST"
+
+# ------------------------------------------------------------
 # 1. Install EVDI
 # ------------------------------------------------------------
 
@@ -19,9 +101,11 @@ if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
    ! dpkg -s libevdi-dev >/dev/null 2>&1; then
 
     sudo apt update
-    sudo apt install -y evdi-dkms libevdi0 libevdi-dev
+    apt_install evdi-dkms libevdi0 libevdi-dev
 fi
 
+# Kernel headers are intentionally NOT recorded in the manifest:
+# other DKMS modules may depend on them.
 if ! dpkg -s "linux-headers-$(uname -r)" >/dev/null 2>&1; then
     sudo apt install -y "linux-headers-$(uname -r)"
 fi
@@ -35,11 +119,19 @@ if [ ! -f "$EVDI_MODPROBE_CONFIG" ] || \
    ! grep -qxF 'options evdi initial_device_count=1' "$EVDI_MODPROBE_CONFIG"; then
 
     echo "Configuring EVDI with one initial virtual display..."
+
+    if [ -f "$EVDI_MODPROBE_CONFIG" ]; then
+        backup_file "$EVDI_MODPROBE_CONFIG"
+    else
+        record rootfile "$EVDI_MODPROBE_CONFIG"
+    fi
+
     echo 'options evdi initial_device_count=1' | sudo tee "$EVDI_MODPROBE_CONFIG" >/dev/null
 fi
 
 if ! lsmod | grep -q '^evdi'; then
     sudo modprobe evdi
+    record module evdi
 fi
 # ------------------------------------------------------------
 # 2. Clone or reuse Apollo-Linux
@@ -57,6 +149,7 @@ if [ ! -d "$PROJECT_DIR/.git" ]; then
     fi
 
     git clone https://github.com/MrOz59/Apollo-Linux "$PROJECT_DIR"
+    record dir "$PROJECT_DIR"
 fi
 
 cd "$PROJECT_DIR"
@@ -73,7 +166,7 @@ echo "=== Installing build dependencies ==="
 
 sudo apt update
 
-sudo apt install -y \
+apt_install \
     build-essential \
     pkg-config \
     git \
@@ -114,10 +207,11 @@ if ! command -v gcc-13 >/dev/null 2>&1 || \
         2>/dev/null; then
 
         sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+        record ppa ubuntu-toolchain-r/test
         sudo apt update
     fi
 
-    sudo apt install -y gcc-13 g++-13
+    apt_install gcc-13 g++-13
 fi
 
 # ------------------------------------------------------------
@@ -129,6 +223,7 @@ echo "=== Checking CMake ==="
 
 if ! command -v cmake >/dev/null 2>&1; then
     sudo snap install cmake --classic
+    record snap cmake
 fi
 
 # ------------------------------------------------------------
@@ -143,6 +238,7 @@ export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
 
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    record nvm "$NVM_DIR"
 fi
 
 source "$NVM_DIR/nvm.sh"
@@ -156,6 +252,7 @@ echo "=== Checking Node.js 22 ==="
 
 if ! nvm ls 22 | grep -q "v22"; then
     nvm install 22
+    record node 22
 fi
 
 nvm use 22
@@ -168,7 +265,7 @@ echo
 echo "=== Checking Intel VAAPI ==="
 
 if ! dpkg -s intel-media-va-driver >/dev/null 2>&1; then
-    sudo apt install -y intel-media-va-driver
+    apt_install intel-media-va-driver
 fi
 
 # ------------------------------------------------------------
@@ -183,7 +280,7 @@ if command -v vainfo >/dev/null 2>&1; then
 else
     echo "WARNING: vainfo is not installed."
     echo "Installing vainfo for verification..."
-    sudo apt install -y vainfo
+    apt_install vainfo
     vainfo || true
 fi
 
@@ -261,9 +358,29 @@ ninja -C build -j1
 echo
 echo "=== Installing runtime assets ==="
 
-if [ -d "$PROJECT_DIR/build/assets" ]; then
-    sudo mkdir -p /usr/local/assets
-    sudo cp -r "$PROJECT_DIR/build/assets/." /usr/local/assets/
+ASSETS_SRC="$PROJECT_DIR/build/assets"
+ASSETS_DST="/usr/local/assets"
+
+if [ -d "$ASSETS_SRC" ]; then
+
+    # Record only directories and files that do not exist yet.
+    # find lists parents before children, so uninstall.sh (which goes
+    # in reverse order) removes files first and then empty directories.
+    [ -d "$ASSETS_DST" ] || record rootdir "$ASSETS_DST"
+
+    while IFS= read -r -d '' item; do
+        rel="${item#"$ASSETS_SRC"/}"
+        dest="$ASSETS_DST/$rel"
+
+        if [ -d "$item" ]; then
+            [ -d "$dest" ] || record rootdir "$dest"
+        else
+            [ -e "$dest" ] || record rootfile "$dest"
+        fi
+    done < <(find "$ASSETS_SRC" -mindepth 1 -print0)
+
+    sudo mkdir -p "$ASSETS_DST"
+    sudo cp -r "$ASSETS_SRC/." "$ASSETS_DST/"
 else
     echo "ERROR: build/assets directory was not found."
     exit 1
@@ -286,6 +403,8 @@ echo
 echo "=== Creating Hermes launcher ==="
 
 mkdir -p "$HOME/.local/share/applications"
+
+[ -e "$LAUNCHER" ] || record file "$LAUNCHER"
 
 cat > "$LAUNCHER" <<EOF
 [Desktop Entry]
@@ -339,3 +458,6 @@ echo "https://localhost:47990"
 echo
 echo "Launcher:"
 echo "Hermes"
+echo
+echo "Install manifest (used by uninstall.sh):"
+echo "$MANIFEST"
