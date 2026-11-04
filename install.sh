@@ -87,7 +87,29 @@ apt_install() {
     done < <(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
 }
 
+# Print the first package name that exists in the apt repositories.
+# EVDI package names differ between Ubuntu releases
+# (22.04: libevdi0 / libevdi0-dev, newer: libevdi1 / libevdi-dev).
+first_available() {
+    local pkg
+    for pkg in "$@"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            echo "$pkg"
+            return 0
+        fi
+    done
+
+    echo "ERROR: none of these packages is available: $*" >&2
+    return 1
+}
+
 echo "Install manifest: $MANIFEST"
+
+# Refresh package lists once; repeated only after adding a repository
+echo
+echo "=== Updating package lists ==="
+
+sudo apt update
 
 # ------------------------------------------------------------
 # 1. Install EVDI
@@ -96,18 +118,23 @@ echo "Install manifest: $MANIFEST"
 echo
 echo "=== Checking EVDI ==="
 
-if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
-   ! dpkg -s libevdi0 >/dev/null 2>&1 || \
-   ! dpkg -s libevdi-dev >/dev/null 2>&1; then
-
-    sudo apt update
-    apt_install evdi-dkms libevdi0 libevdi-dev
-fi
-
-# Kernel headers are intentionally NOT recorded in the manifest:
+# Kernel headers must be installed BEFORE evdi-dkms:
+# DKMS builds the kernel module while the package is being installed.
+#
+# They are intentionally NOT recorded in the manifest:
 # other DKMS modules may depend on them.
 if ! dpkg -s "linux-headers-$(uname -r)" >/dev/null 2>&1; then
     sudo apt install -y "linux-headers-$(uname -r)"
+fi
+
+EVDI_LIB="$(first_available libevdi1 libevdi0)"
+EVDI_DEV="$(first_available libevdi-dev libevdi0-dev)"
+
+if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
+   ! dpkg -s "$EVDI_LIB" >/dev/null 2>&1 || \
+   ! dpkg -s "$EVDI_DEV" >/dev/null 2>&1; then
+
+    apt_install evdi-dkms "$EVDI_LIB" "$EVDI_DEV"
 fi
 
 # EVDI must provide at least one pre-created virtual DRM device.
@@ -164,8 +191,6 @@ git submodule update --init --recursive
 echo
 echo "=== Installing build dependencies ==="
 
-sudo apt update
-
 apt_install \
     build-essential \
     pkg-config \
@@ -187,6 +212,7 @@ apt_install \
     libxcb-xfixes0-dev \
     libpulse-dev \
     libnuma-dev \
+    libgbm-dev \
     qtbase5-dev \
     libqt5svg5-dev \
     ninja-build
@@ -201,10 +227,14 @@ echo "=== Checking GCC 13 ==="
 if ! command -v gcc-13 >/dev/null 2>&1 || \
    ! command -v g++-13 >/dev/null 2>&1; then
 
-    if ! grep -q "ubuntu-toolchain-r/test" \
-        /etc/apt/sources.list.d/*.list \
+    # The toolchain PPA is added only when gcc-13 is not available in the
+    # standard repositories (it is on Ubuntu 24.04+). Besides gcc-13 the PPA
+    # also upgrades system libraries such as libstdc++6 and libgcc-s1.
+    if ! first_available gcc-13 >/dev/null 2>&1 && \
+       ! grep -qs "ubuntu-toolchain-r/test" \
         /etc/apt/sources.list \
-        2>/dev/null; then
+        /etc/apt/sources.list.d/*.list \
+        /etc/apt/sources.list.d/*.sources; then
 
         sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
         record ppa ubuntu-toolchain-r/test
@@ -306,38 +336,38 @@ cmake -B build -G Ninja -S . \
 echo
 echo "=== Checking libevdev ==="
 
-LIBEVDI_ROOT="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev"
-LIBEVDI_BUILD="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev-build"
-LIBEVDI_ARCHIVE="$LIBEVDI_ROOT/libevdev-1.13.2.tar.xz"
-LIBEVDI_SOURCE="$LIBEVDI_ROOT/libevdev-1.13.2"
-LIBEVDI_LIBRARY="$LIBEVDI_BUILD/libevdev/.libs/libevdev.a"
+LIBEVDEV_ROOT="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev"
+LIBEVDEV_BUILD="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev-build"
+LIBEVDEV_ARCHIVE="$LIBEVDEV_ROOT/libevdev-1.13.2.tar.xz"
+LIBEVDEV_SOURCE="$LIBEVDEV_ROOT/libevdev-1.13.2"
+LIBEVDEV_LIBRARY="$LIBEVDEV_BUILD/libevdev/.libs/libevdev.a"
 
-if [ ! -f "$LIBEVDI_LIBRARY" ]; then
+if [ ! -f "$LIBEVDEV_LIBRARY" ]; then
 
-    mkdir -p "$LIBEVDI_ROOT"
+    mkdir -p "$LIBEVDEV_ROOT"
 
-    if [ ! -f "$LIBEVDI_ARCHIVE" ]; then
+    if [ ! -f "$LIBEVDEV_ARCHIVE" ]; then
         wget \
-            -O "$LIBEVDI_ARCHIVE" \
+            -O "$LIBEVDEV_ARCHIVE" \
             https://www.freedesktop.org/software/libevdev/libevdev-1.13.2.tar.xz
     fi
 
-    if [ ! -d "$LIBEVDI_SOURCE" ]; then
-        tar -xf "$LIBEVDI_ARCHIVE" -C "$LIBEVDI_ROOT"
+    if [ ! -d "$LIBEVDEV_SOURCE" ]; then
+        tar -xf "$LIBEVDEV_ARCHIVE" -C "$LIBEVDEV_ROOT"
     fi
 
-    cd "$LIBEVDI_SOURCE"
+    cd "$LIBEVDEV_SOURCE"
 
     if [ ! -f "libevdev/.libs/libevdev.a" ]; then
         ./configure
         make -j"$(nproc)"
     fi
 
-    mkdir -p "$LIBEVDI_BUILD/libevdev/.libs"
+    mkdir -p "$LIBEVDEV_BUILD/libevdev/.libs"
 
     cp \
         "libevdev/.libs/libevdev.a" \
-        "$LIBEVDI_LIBRARY"
+        "$LIBEVDEV_LIBRARY"
 fi
 
 # ------------------------------------------------------------
@@ -349,7 +379,9 @@ echo "=== Building Hermes ==="
 
 cd "$PROJECT_DIR"
 
-ninja -C build -j1
+# Single job by default: parallel C++ compilation of Hermes can run out
+# of memory on laptops. Faster build: BUILD_JOBS=4 ./install.sh
+ninja -C build -j"${BUILD_JOBS:-1}"
 
 # ------------------------------------------------------------
 # 13. Install runtime assets
@@ -372,10 +404,12 @@ if [ -d "$ASSETS_SRC" ]; then
         rel="${item#"$ASSETS_SRC"/}"
         dest="$ASSETS_DST/$rel"
 
-        if [ -d "$item" ]; then
+        # Symlinks (e.g. shaders -> source tree) are copied as links,
+        # so they are recorded as files, not directories
+        if [ -d "$item" ] && [ ! -L "$item" ]; then
             [ -d "$dest" ] || record rootdir "$dest"
         else
-            [ -e "$dest" ] || record rootfile "$dest"
+            [ -e "$dest" ] || [ -L "$dest" ] || record rootfile "$dest"
         fi
     done < <(find "$ASSETS_SRC" -mindepth 1 -print0)
 
@@ -436,9 +470,14 @@ fi
 
 echo
 echo "--- Hermes binary ---"
-ls -lh \
-    "$PROJECT_DIR/build/sunshine" \
-    "$PROJECT_DIR/build/sunshine-0.5.1"
+# build/sunshine is a symlink to a versioned binary (e.g. sunshine-0.5.1);
+# the version is not hardcoded, so updates of Apollo-Linux do not break this
+ls -lh "$PROJECT_DIR/build/sunshine"
+
+HERMES_BINARY="$(readlink -f "$PROJECT_DIR/build/sunshine")"
+if [ "$HERMES_BINARY" != "$PROJECT_DIR/build/sunshine" ]; then
+    ls -lh "$HERMES_BINARY"
+fi
 
 echo
 echo "--- Launcher ---"
