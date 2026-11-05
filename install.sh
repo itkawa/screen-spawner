@@ -4,8 +4,14 @@ set -e
 
 echo "=== Apollo-Linux / Hermes + EVDI installation ==="
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$HOME/Apollo-Linux"
 LAUNCHER="$HOME/.local/share/applications/hermes.desktop"
+
+# The Hermes revision this setup was verified with, and the fix it needs
+# to work with libevdi 1.12. Move the commit only after re-testing the patch.
+HERMES_COMMIT="7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99"
+HERMES_PATCH="$SCRIPT_DIR/patches/evdi-fix.patch"
 
 # ------------------------------------------------------------
 # 0. Install manifest
@@ -180,6 +186,26 @@ if [ ! -d "$PROJECT_DIR/.git" ]; then
 fi
 
 cd "$PROJECT_DIR"
+
+# Use the verified revision, without overwriting local changes
+if [ "$(git rev-parse HEAD)" != "$HERMES_COMMIT" ]; then
+    if ! git diff --quiet HEAD --; then
+        echo "ERROR: $PROJECT_DIR has uncommitted changes and is not at the"
+        echo "verified commit $HERMES_COMMIT."
+        echo "Please commit or remove those changes and run this script again."
+        exit 1
+    fi
+    git fetch origin
+    git checkout --detach "$HERMES_COMMIT"
+fi
+
+# Apply the EVDI fix unless a previous run already did
+if git apply --reverse --check "$HERMES_PATCH" 2>/dev/null; then
+    echo "EVDI fix is already applied."
+else
+    git apply "$HERMES_PATCH"
+    echo "EVDI fix applied."
+fi
 
 # Initialize and update submodules
 git submodule update --init --recursive

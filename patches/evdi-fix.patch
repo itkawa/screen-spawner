@@ -1,0 +1,42 @@
+diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
+index 84617d2e..fc1a41f7 100644
+--- a/src/platform/linux/virtual_display.cpp
++++ b/src/platform/linux/virtual_display.cpp
+@@ -153,7 +153,8 @@ namespace VDISPLAY {
+   typedef void (*fn_evdi_close)(evdi_handle handle);
+   typedef void (*fn_evdi_connect)(evdi_handle handle, const unsigned char *edid,
+                                    const unsigned int edid_length,
+-                                   const uint32_t sku_area_limit);
++                                   const uint32_t pixel_area_limit,
++                                   const uint32_t pixel_per_second_limit);
+   typedef void (*fn_evdi_disconnect)(evdi_handle handle);
+   typedef void (*fn_evdi_grab_pixels)(evdi_handle handle, struct evdi_rect *rects, int *num_rects);
+   typedef void (*fn_evdi_register_buffer)(evdi_handle handle, struct evdi_buffer buffer);
+@@ -5948,7 +5949,7 @@ namespace VDISPLAY {
+ 
+           // Connect with EDID (no area limit)
+           BOOST_LOG(info) << "[VDISPLAY] Connecting with " << edid_size << "-byte EDID for " << width << "x" << height;
+-          evdi.connect(handle, edid, edid_size, 0);
++          evdi.connect(handle, edid, edid_size, 0, 0);
+ 
+           // The DRM node is added asynchronously after connect(). Poll at a
+           // short interval: this is on the stream-start critical path, so the
+@@ -6154,7 +6155,7 @@ namespace VDISPLAY {
+           unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz);
+           unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
+           BOOST_LOG(info) << "[VDISPLAY] Reconnecting with " << edid_size << "-byte EDID for " << width << "x" << height;
+-          evdi.connect(vdinfo.handle, edid, edid_size, 0);
++          evdi.connect(vdinfo.handle, edid, edid_size, 0, 0);
+         } else if (vdinfo.using_hermes_kms && vdinfo.drm_fd >= 0) {
+           if (!hermes_kms::set_output(vdinfo.drm_fd, true, width, height, refresh_hz, vdinfo.session_id)) {
+             return -1;
+@@ -6212,7 +6213,8 @@ namespace VDISPLAY {
+           continue;
+         }
+         std::error_code ec;
+-        const auto module = fs::canonical(entry.path() / "device/driver/module", ec).filename().string();
++        const auto card = entry.path().parent_path() / ("card" + std::to_string(card_index));
++        const auto module = fs::canonical(card / "device/driver/module", ec).filename().string();
+         if (!ec && module == "evdi") {
+           return name.substr(prefix.size());
+         }
