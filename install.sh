@@ -166,6 +166,15 @@ if ! lsmod | grep -q '^evdi'; then
     sudo modprobe evdi
     record module evdi
 fi
+
+# evdi-dkms does not load the module at boot. Without this, Hermes
+# would lose its virtual display after the first reboot.
+if ! grep -qsxF evdi /etc/modules /etc/modules-load.d/*.conf; then
+    echo "Enabling EVDI at boot..."
+    record line "/etc/modules"$'\t'"evdi"
+    echo evdi | sudo tee -a /etc/modules >/dev/null
+fi
+
 # ------------------------------------------------------------
 # 2. Clone or reuse Apollo-Linux
 # ------------------------------------------------------------
