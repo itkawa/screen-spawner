@@ -1,5 +1,23 @@
+diff --git a/src/platform/linux/kmsgrab.cpp b/src/platform/linux/kmsgrab.cpp
+index 89987125..ec5e1c85 100644
+--- a/src/platform/linux/kmsgrab.cpp
++++ b/src/platform/linux/kmsgrab.cpp
+@@ -1784,6 +1784,13 @@ namespace platf {
+         offset_y = 0;
+         env_width = width;
+         env_height = height;
++        // On X11 this output is part of the host desktop, and absolute input is
++        // measured against the whole desktop, not against this output.
++        if (window_system == window_system_e::X11 &&
++            !VDISPLAY::getX11VirtualDisplayGeometry(display_name, offset_x, offset_y, env_width, env_height)) {
++          BOOST_LOG(warning) << "Could not find " << display_name
++                             << " in the X11 layout; absolute input may land on another monitor.";
++        }
+         return 0;
+       }
+ 
 diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
-index 84617d2..085f4c6 100644
+index 84617d2e..d1b17f25 100644
 --- a/src/platform/linux/virtual_display.cpp
 +++ b/src/platform/linux/virtual_display.cpp
 @@ -153,7 +153,8 @@ namespace VDISPLAY {
@@ -59,3 +77,139 @@ index 84617d2..085f4c6 100644
          if (!ec && module == "evdi") {
            return name.substr(prefix.size());
          }
+@@ -6475,6 +6480,71 @@ namespace VDISPLAY {
+ #endif
+   }
+ 
++  // begin parse_x11_output
++  struct x11_output_t {
++    std::string name;
++    int x {0};
++    int y {0};
++    int desktop_width {0};
++    int desktop_height {0};
++  };
++
++  /**
++   * Find an active output in the text of `xrandr --current`.
++   *
++   * X names an output of a secondary GPU with a suffix, so the DRM connector
++   * DVI-I-1 appears as DVI-I-1-1. An exact name wins over a suffixed one.
++   */
++  static bool parse_x11_output(const std::string &xrandr_text, const std::string &connector, x11_output_t &result) {
++    std::istringstream lines {xrandr_text};
++    std::string line;
++    int desktop_width = 0;
++    int desktop_height = 0;
++    bool found = false;
++
++    while (std::getline(lines, line)) {
++      if (line.rfind("Screen ", 0) == 0) {
++        const auto current = line.find("current ");
++        if (current != std::string::npos) {
++          std::sscanf(line.c_str() + current, "current %d x %d", &desktop_width, &desktop_height);
++        }
++        continue;
++      }
++
++      std::istringstream fields {line};
++      std::string name;
++      std::string state;
++      if (!(fields >> name >> state) || state != "connected") {
++        continue;
++      }
++      const bool exact = name == connector;
++      if (!exact && (found || name.rfind(connector + "-", 0) != 0)) {
++        continue;
++      }
++
++      std::string geometry;
++      fields >> geometry;
++      if (geometry == "primary") {
++        fields >> geometry;
++      }
++      int width = 0;
++      int height = 0;
++      int x = 0;
++      int y = 0;
++      if (std::sscanf(geometry.c_str(), "%dx%d+%d+%d", &width, &height, &x, &y) != 4) {
++        continue;
++      }
++
++      result = {name, x, y, desktop_width, desktop_height};
++      found = true;
++      if (exact) {
++        break;
++      }
++    }
++    return found && desktop_width > 0 && desktop_height > 0;
++  }
++  // end parse_x11_output
++
+   bool activateVirtualDisplayOutput(const std::string &displayName) {
+     // KWin is configured when the display is created - enabled, placed and
+     // driven at the requested mode in one kscreen-doctor transaction - so
+@@ -6590,6 +6660,44 @@ namespace VDISPLAY {
+     }
+ 
+     BOOST_LOG(info) << "[VDISPLAY] Activated X11 virtual output " << connector;
++
++    // Touch and pen are bound to one monitor by GNOME, and without a binding a
++    // laptop sends them to its built-in panel. Mutter adopts the output
++    // asynchronously, so wait for it to become active before binding.
++    if (mutter::available()) {
++      x11_output_t output;
++      bool found = false;
++      for (int attempt = 0; attempt < 30 && !found; ++attempt) {
++        found = parse_x11_output(mutter::command_output("xrandr --current 2>/dev/null"), connector, output);
++        if (!found) {
++          std::this_thread::sleep_for(std::chrono::milliseconds(100));
++        }
++      }
++      if (found) {
++        mutter::map_input_devices(output.name);
++      } else {
++        BOOST_LOG(warning) << "[VDISPLAY] X11 output for " << connector
++                           << " did not become active; touch input will not be bound to it.";
++      }
++    }
++    return true;
++  }
++
++  bool getX11VirtualDisplayGeometry(const std::string &display_name,
++                                    int &offset_x, int &offset_y,
++                                    int &environment_width, int &environment_height) {
++    const auto connector = virtual_display_connector_name(display_name);
++    if (connector.empty()) {
++      return false;
++    }
++    x11_output_t output;
++    if (!parse_x11_output(mutter::command_output("xrandr --current 2>/dev/null"), connector, output)) {
++      return false;
++    }
++    offset_x = output.x;
++    offset_y = output.y;
++    environment_width = output.desktop_width;
++    environment_height = output.desktop_height;
+     return true;
+   }
+ 
+diff --git a/src/platform/linux/virtual_display.h b/src/platform/linux/virtual_display.h
+index d37f9aed..90f488b8 100644
+--- a/src/platform/linux/virtual_display.h
++++ b/src/platform/linux/virtual_display.h
+@@ -974,6 +974,14 @@ namespace VDISPLAY {
+                                    int &offset_x, int &offset_y,
+                                    int &environment_width, int &environment_height);
+ 
++  /**
++   * Resolve the desktop position of an EVDI output in an X11 session.
++   * Returns false when the output is not active in the X layout.
++   */
++  bool getX11VirtualDisplayGeometry(const std::string &display_name,
++                                    int &offset_x, int &offset_y,
++                                    int &environment_width, int &environment_height);
++
+   /** Query the active scanout geometry. @return true on success. */
+   bool hermesKmsCaptureSize(int render_fd, int &width, int &height);
+ 
