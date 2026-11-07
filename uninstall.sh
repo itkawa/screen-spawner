@@ -8,6 +8,8 @@ set -u
 STATE_DIR="$HOME/.local/state/smart-device-display"
 MANIFEST="$STATE_DIR/installed.list"
 BACKUP_DIR="$STATE_DIR/backup"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERMES_PATCH="$SCRIPT_DIR/patches/evdi-fix.patch"
 
 echo "=== SmartDeviceDisplay uninstall ==="
 
@@ -219,6 +221,15 @@ for entry in "${OTHER_ENTRIES[@]}"; do
                     keep "$type" "$value"
                     ;;
                 *)
+                    # install.sh applied the EVDI fix itself, so it is not
+                    # local work and must not block the removal below
+                    fix_reverted=0
+                    if [ -d "$value/.git" ] &&
+                       git -C "$value" apply --reverse --check "$HERMES_PATCH" 2>/dev/null &&
+                       git -C "$value" apply --reverse "$HERMES_PATCH"; then
+                        fix_reverted=1
+                    fi
+
                     # Never delete a git checkout with local work in it
                     if [ -d "$value/.git" ] && {
                         [ -n "$(git -C "$value" status --porcelain 2>/dev/null)" ] ||
@@ -228,6 +239,11 @@ for entry in "${OTHER_ENTRIES[@]}"; do
                         echo "  Contains uncommitted or unpushed changes, skipped:"
                         git -C "$value" status --short | head -10 | sed 's/^/    /'
                         keep "$type" "$value"
+
+                        # The checkout stays, so leave it as it was
+                        if [ $fix_reverted -eq 1 ]; then
+                            git -C "$value" apply "$HERMES_PATCH"
+                        fi
                     else
                         rm -rf "$value"
                     fi
