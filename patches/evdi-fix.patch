@@ -1,5 +1,5 @@
 diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
-index 84617d2e..fc1a41f7 100644
+index 84617d2..085f4c6 100644
 --- a/src/platform/linux/virtual_display.cpp
 +++ b/src/platform/linux/virtual_display.cpp
 @@ -153,7 +153,8 @@ namespace VDISPLAY {
@@ -12,7 +12,26 @@ index 84617d2e..fc1a41f7 100644
    typedef void (*fn_evdi_disconnect)(evdi_handle handle);
    typedef void (*fn_evdi_grab_pixels)(evdi_handle handle, struct evdi_rect *rects, int *num_rects);
    typedef void (*fn_evdi_register_buffer)(evdi_handle handle, struct evdi_buffer buffer);
-@@ -5948,7 +5949,7 @@ namespace VDISPLAY {
+@@ -5463,12 +5464,15 @@ namespace VDISPLAY {
+           pollfd poll_fd {};
+           poll_fd.fd = evdi.get_event_ready(display.handle);
+           poll_fd.events = POLLIN;
+-          if (poll_fd.fd < 0 || ::poll(&poll_fd, 1, 0) <= 0 || !(poll_fd.revents & POLLIN)) {
+-            evdi.request_update(display.handle, display.evdi_buffer_id);
++          if (poll_fd.fd >= 0 && ::poll(&poll_fd, 1, 0) > 0 && (poll_fd.revents & POLLIN)) {
++            evdi.handle_events(display.handle, &event_context);
++          } else if (!evdi.request_update(display.handle, display.evdi_buffer_id)) {
+             continue;
+           }
++          // A true return means a frame is already waiting. The driver sends no
++          // event for it, so it has to be grabbed now: otherwise its pageflip is
++          // never acknowledged and the X server stalls on every commit.
+ 
+-          evdi.handle_events(display.handle, &event_context);
+           int rect_count = max_rects;
+           display.evdi_buffer->begin_write();
+           evdi.grab_pixels(display.handle, rects, &rect_count);
+@@ -5948,7 +5952,7 @@ namespace VDISPLAY {
  
            // Connect with EDID (no area limit)
            BOOST_LOG(info) << "[VDISPLAY] Connecting with " << edid_size << "-byte EDID for " << width << "x" << height;
@@ -21,7 +40,7 @@ index 84617d2e..fc1a41f7 100644
  
            // The DRM node is added asynchronously after connect(). Poll at a
            // short interval: this is on the stream-start critical path, so the
-@@ -6154,7 +6155,7 @@ namespace VDISPLAY {
+@@ -6154,7 +6158,7 @@ namespace VDISPLAY {
            unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz);
            unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
            BOOST_LOG(info) << "[VDISPLAY] Reconnecting with " << edid_size << "-byte EDID for " << width << "x" << height;
@@ -30,7 +49,7 @@ index 84617d2e..fc1a41f7 100644
          } else if (vdinfo.using_hermes_kms && vdinfo.drm_fd >= 0) {
            if (!hermes_kms::set_output(vdinfo.drm_fd, true, width, height, refresh_hz, vdinfo.session_id)) {
              return -1;
-@@ -6212,7 +6213,8 @@ namespace VDISPLAY {
+@@ -6212,7 +6216,8 @@ namespace VDISPLAY {
            continue;
          }
          std::error_code ec;
