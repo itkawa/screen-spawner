@@ -1,11 +1,13 @@
 # SmartDeviceDisplay
 
-**SmartDeviceDisplay** turns any number of smart devices (tablets, phones, smart TVs) into **extra monitors** for a Linux computer, connected over your home Wi-Fi network.
+**SmartDeviceDisplay** aims to turn any number of smart devices (tablets, phones, smart TVs) into **extra monitors** for a Linux computer, connected over your home Wi-Fi network.
 
-Each device can be either:
+The goal is for each device to be either:
 
 * an **extended display**: a separate monitor with its own workspace, or
 * a **mirrored display**: a copy of an existing screen.
+
+> **Current status:** the scripts set up **one extended virtual display**, and the setup has only been used with one Android tablet. With the EVDI backend Hermes supports a single virtual display; more than one needs its Hermes-KMS backend, which these scripts do not install. Mirroring and smart TVs have not been tested.
 
 You don't need cables, special hardware, or a custom app on the device. SmartDeviceDisplay uses **low-latency game-streaming technology** and ties together existing open-source tools:
 
@@ -17,6 +19,44 @@ You don't need cables, special hardware, or a custom app on the device. SmartDev
 | [Artemis](https://github.com/ClassicOldSong/moonlight-android) / [Moonlight](https://moonlight-stream.org/) | Client on the device: Android phones, tablets, Android TV and Google TV, plus other platforms Moonlight supports |
 
 The repository contains scripts that install, configure, and remove the whole stack on Ubuntu.
+
+---
+
+## Installation
+
+### Requirements
+
+* Ubuntu with an X11 session; tested on Ubuntu 22.04 with GNOME
+* **An Intel GPU.** The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so AMD and NVIDIA GPUs get no hardware encoding from this setup
+* `sudo` access and an internet connection
+
+### Install
+
+```bash
+git clone https://github.com/itkawa/smart-device-display
+cd smart-device-display
+./install.sh
+```
+
+The script installs the dependencies, configures EVDI to load at boot, and builds Hermes in `~/Apollo-Linux` from a tested commit with the fix from `patches/evdi-fix.patch`.
+
+The build uses a single job by default, because parallel compilation can run out of memory on laptops, and it takes a long time. To build faster:
+
+```bash
+BUILD_JOBS=4 ./install.sh
+```
+
+When it finishes, continue with [Starting Hermes](#15-starting-hermes) and [Pairing the tablet](#5-pairing-the-tablet).
+
+`additional_monitor_cfg.sh` is not part of the installation: Hermes does not read the file it creates.
+
+### Uninstall
+
+```bash
+./uninstall.sh
+```
+
+`install.sh` records every change it makes in `~/.local/state/smart-device-display/installed.list`, and `uninstall.sh` removes only those. Anything that was there before the installation stays. `~/Apollo-Linux` is kept if it contains your own changes.
 
 ---
 
