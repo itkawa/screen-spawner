@@ -6,7 +6,7 @@
 
 set -u
 
-STATE_DIR="$HOME/.local/state/smart-device-display"
+STATE_DIR="$HOME/.local/state/screen-spawner"
 MANIFEST="$STATE_DIR/installed.list"
 BACKUP_DIR="$STATE_DIR/backup"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -91,7 +91,7 @@ BUILD_JOBS=4 ./install.sh
 ./uninstall.sh
 ```
 
-`install.sh` records every change it makes in `~/.local/state/smart-device-display/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
+`install.sh` records every change it makes in `~/.local/state/screen-spawner/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
 
 A few things intentionally stay after uninstalling: the kernel headers (other kernel modules may need them), the system libraries updated by the GCC 13 repository (rolling them back would break the system), and the Hermes settings and pairings in `~/.config/hermes`, which you can delete by hand.
 
@@ -214,8 +214,6 @@ dpkg -l | grep intel-media-va-driver
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, libevdi 1.12 on Ubuntu 22.04 |
-| `config.sh` | Older EVDI setup script. It is not part of the installation: `install.sh` now configures EVDI itself |
-| `additional_monitor_cfg.sh` | Older monitor layout script. It is not part of the installation: Hermes does not read the file it creates |
 
 ---
 

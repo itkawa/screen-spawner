@@ -23,7 +23,7 @@ HERMES_PATCH="$SCRIPT_DIR/patches/evdi-fix.patch"
 #
 # Format: <type><TAB><value>, one entry per line.
 
-STATE_DIR="$HOME/.local/state/smart-device-display"
+STATE_DIR="$HOME/.local/state/screen-spawner"
 MANIFEST="$STATE_DIR/installed.list"
 BACKUP_DIR="$STATE_DIR/backup"
 

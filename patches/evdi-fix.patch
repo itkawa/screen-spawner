@@ -120,11 +120,10 @@ index 84617d2e..884cb6ad 100644
          if (!ec && module == "evdi") {
            return name.substr(prefix.size());
          }
-@@ -6475,6 +6499,71 @@ namespace VDISPLAY {
+@@ -6475,6 +6499,69 @@ namespace VDISPLAY {
  #endif
    }
  
-+  // begin parse_x11_output
 +  struct x11_output_t {
 +    std::string name;
 +    int x {0};
@@ -187,12 +186,11 @@ index 84617d2e..884cb6ad 100644
 +    }
 +    return found && desktop_width > 0 && desktop_height > 0;
 +  }
-+  // end parse_x11_output
 +
    bool activateVirtualDisplayOutput(const std::string &displayName) {
      // KWin is configured when the display is created - enabled, placed and
      // driven at the requested mode in one kscreen-doctor transaction - so
-@@ -6590,6 +6679,44 @@ namespace VDISPLAY {
+@@ -6590,6 +6677,44 @@ namespace VDISPLAY {
      }
  
      BOOST_LOG(info) << "[VDISPLAY] Activated X11 virtual output " << connector;
