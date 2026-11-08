@@ -466,7 +466,28 @@ echo "=== Hermes version ==="
 "$PROJECT_DIR/build/sunshine" --version
 
 # ------------------------------------------------------------
-# 15. Create / update desktop launcher
+# 15. Keep sound on the computer's own speakers
+# ------------------------------------------------------------
+
+# Without this Hermes switches the whole system's sound to the tablet
+# while it is connected, and the laptop's speakers go silent.
+HERMES_CONFIG="$HOME/.config/hermes/hermes.conf"
+AUDIO_LINE="stream_audio = false"
+
+if ! grep -qsE '^[[:space:]]*stream_audio[[:space:]]*=' "$HERMES_CONFIG"; then
+    echo
+    echo "=== Keeping sound on the computer's speakers ==="
+    mkdir -p "$(dirname "$HERMES_CONFIG")"
+    record line "$HERMES_CONFIG"$'\t'"$AUDIO_LINE"
+    # Hermes may have written the file without a final newline
+    if [ -s "$HERMES_CONFIG" ] && [ -n "$(tail -c1 "$HERMES_CONFIG")" ]; then
+        echo >> "$HERMES_CONFIG"
+    fi
+    echo "$AUDIO_LINE" >> "$HERMES_CONFIG"
+fi
+
+# ------------------------------------------------------------
+# 16. Create / update desktop launcher
 # ------------------------------------------------------------
 
 echo
@@ -490,7 +511,7 @@ EOF
 chmod +x "$LAUNCHER"
 
 # ------------------------------------------------------------
-# 16. Final checks
+# 17. Final checks
 # ------------------------------------------------------------
 
 echo
