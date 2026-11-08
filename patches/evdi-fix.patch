@@ -1,3 +1,5 @@
+Local changes to Hermes (https://github.com/MrOz59/Hermes), licensed under GPL-3.0 like Hermes itself.
+
 diff --git a/src/platform/linux/kmsgrab.cpp b/src/platform/linux/kmsgrab.cpp
 index 89987125..ec5e1c85 100644
 --- a/src/platform/linux/kmsgrab.cpp
