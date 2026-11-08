@@ -118,6 +118,19 @@ Hermes has to be started again after every reboot.
 2. On the tablet, install Moonlight and add the laptop. Moonlight usually finds it on the local network by itself; otherwise add it by IP address.
 3. Moonlight shows a PIN. Enter it in the Hermes Web UI.
 
+### Set up the Desktop app (once)
+
+Out of the box, the **Desktop** app does not create a virtual monitor, and the tablet just shows the laptop screen. To turn it on, open **Applications** in the Hermes Web UI, click **Edit** on **Desktop**, then:
+
+- turn on **Always create Virtual Display**;
+- set **Virtual Display Layout**:
+  - **Extend**: the tablet is a separate screen beside the laptop;
+  - **Mirror**: the tablet shows the same picture as the laptop's main screen, at that screen's resolution. Other monitors stay separate screens.
+
+Save. The setting applies from the next connection.
+
+While the tablet is connected, it can be moved in **Settings → Displays** like any other monitor; touch and the cursor follow it without reconnecting.
+
 ### Connect
 
 In Moonlight, open the laptop and choose **Desktop**. Hermes creates the virtual monitor at that moment, and the tablet shows it. The virtual monitor does not exist before a client connects.
@@ -126,7 +139,7 @@ In Moonlight, open the laptop and choose **Desktop**. Hermes creates the virtual
 
 The tablet works alongside the laptop's own input devices, the way a touchpad and a USB mouse do on a laptop: they share one cursor and one keyboard focus.
 
-A touch moves the cursor straight to the touched point on the tablet. Hermes reads the position of the virtual display when the stream starts, so reconnect after rearranging monitors.
+A touch moves the cursor straight to the touched point on the tablet, also after the monitors are rearranged during the session.
 
 ### Sound
 
@@ -141,6 +154,7 @@ The tablet's speakers are not used. All sound, including from windows on the tab
 With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 
 * the tablet works as an extended monitor and as a mirrored one;
+* the tablet can be moved in the display settings during a session, and touch input follows it;
 * it works at the same time as a physical HDMI monitor: laptop screen, HDMI monitor and tablet are three displays side by side;
 * mouse, keyboard and touch input reach the tablet's display;
 * there was no noticeable latency in use. The latency has not been measured with instruments;
@@ -153,6 +167,20 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * **The virtual monitor stays after you quit Moonlight.** Hermes only pauses the session, so the monitor remains in the display settings, and windows on it stay out of sight until you reconnect or stop Hermes.
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
 * **No autostart.** Hermes has to be started by hand after every reboot.
+
+---
+
+## Roadmap
+
+A **Screen Spawner** app in the top bar, so that Hermes and the tablet are set up without the Web UI:
+
+* start and stop Hermes, start it at login;
+* pair a new tablet by typing its PIN;
+* disconnect the tablet, which also removes its virtual monitor;
+* switch between modes at any time, without reconnecting:
+  * **extended**, with a scale for the tablet alone (100%, 125%, 150%…), so text and windows on it can be made larger while the laptop stays as it is;
+  * **mirrored**, either at the laptop's resolution (sharp, but small on a smaller tablet screen) or at a lower resolution on both screens, so that everything on the tablet is larger;
+* choose which display is 1, 2 and 3, the way it works for physical monitors.
 
 ---
 
@@ -189,7 +217,7 @@ sudo modprobe evdi
 
 ### No virtual monitor appears
 
-The virtual monitor exists only while a client is connected. With Moonlight connected, check:
+The virtual monitor exists only while a client is connected, and only if **Always create Virtual Display** is on for the Desktop app (see [Set up the Desktop app](#set-up-the-desktop-app-once)). With Moonlight connected, check:
 
 ```bash
 xrandr --listmonitors
@@ -213,7 +241,7 @@ dpkg -l | grep intel-media-va-driver
 |------|---------|
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
 | `uninstall.sh` | Removes what `install.sh` installed |
-| `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, libevdi 1.12 on Ubuntu 22.04 |
+| `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11, libevdi 1.12 on Ubuntu 22.04 |
 
 ---
 

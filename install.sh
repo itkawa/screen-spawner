@@ -248,6 +248,7 @@ apt_install \
     libxcb-shm0-dev \
     libxcb-xfixes0-dev \
     libpulse-dev \
+    libsystemd-dev \
     libnuma-dev \
     libgbm-dev \
     qtbase5-dev \
