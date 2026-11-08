@@ -34,19 +34,7 @@ keep() {
 }
 
 # ------------------------------------------------------------
-# 1. Stop Hermes
-# ------------------------------------------------------------
-
-echo
-echo "=== Stopping Hermes ==="
-
-# Anchored to the start of the command line, so it matches only the
-# Hermes binary itself, not shells or editors that mention its path.
-pkill -TERM -f '^([^ ]*/)?build/sunshine(-[0-9.]+)?( |$)' 2>/dev/null || true
-sleep 1
-
-# ------------------------------------------------------------
-# 2. Read manifest (newest entries first)
+# 1. Read manifest (newest entries first)
 # ------------------------------------------------------------
 
 APT_ENTRIES=()
@@ -60,6 +48,56 @@ while IFS=$'\t' read -r type value; do
         *)   OTHER_ENTRIES+=("$type"$'\t'"$value") ;;
     esac
 done < <(tac "$MANIFEST")
+
+# ------------------------------------------------------------
+# 2. Confirm
+# ------------------------------------------------------------
+
+# install.sh cannot know whether its tools were used for other work
+# later, so show the ones people commonly use and let them decide.
+TOOLS=()
+for pkg in "${APT_ENTRIES[@]}"; do
+    case "${pkg%%:*}" in
+        gcc-13|g++-13|git|curl|wget|ninja-build|vainfo) TOOLS+=("${pkg%%:*}") ;;
+    esac
+done
+
+echo
+echo "This removes everything install.sh installed:"
+echo "  ${#APT_ENTRIES[@]} apt packages${TOOLS[*]:+, including ${TOOLS[*]}}"
+for entry in "${OTHER_ENTRIES[@]}"; do
+    value="${entry#*$'\t'}"
+    case "${entry%%$'\t'*}" in
+        snap) echo "  $value (snap)" ;;
+        ppa)  echo "  repository ppa:$value" ;;
+        node) echo "  Node.js $value (kept if it has your own global npm packages)" ;;
+        nvm)  echo "  NVM in $value (kept if it has other Node.js versions)" ;;
+        dir)  echo "  $value" ;;
+    esac
+done
+echo
+echo "If you use any of these for your own work, answer N and remove"
+echo "the rest by hand."
+
+ANSWER=""
+read -r -p "Continue? [y/N] " ANSWER || true
+
+case "$ANSWER" in
+    y|Y|yes|YES) ;;
+    *) echo "Nothing was removed."; exit 0 ;;
+esac
+
+# ------------------------------------------------------------
+# 3. Stop Hermes
+# ------------------------------------------------------------
+
+echo
+echo "=== Stopping Hermes ==="
+
+# Anchored to the start of the command line, so it matches only the
+# Hermes binary itself, not shells or editors that mention its path.
+pkill -TERM -f '^([^ ]*/)?build/sunshine(-[0-9.]+)?( |$)' 2>/dev/null || true
+sleep 1
 
 # ------------------------------------------------------------
 # 3. Unload kernel modules loaded by install.sh
@@ -158,6 +196,8 @@ echo
 echo "=== Removing files, snaps, repositories and Node.js ==="
 
 PPA_REMOVED=0
+KEEP_NVM=0
+KEPT_IN_USE=()
 
 for entry in "${OTHER_ENTRIES[@]}"; do
     type="${entry%%$'\t'*}"
@@ -185,9 +225,17 @@ for entry in "${OTHER_ENTRIES[@]}"; do
             fi
             ;;
 
+        # Node.js and NVM that were used for other work since are no
+        # longer ours: they are left in place and dropped from the manifest.
         node)
-            echo "Removing Node.js $value from NVM"
-            if [ -s "$HOME/.nvm/nvm.sh" ]; then
+            OWN_GLOBALS="$(ls "$HOME/.nvm/versions/node/v$value".*/lib/node_modules 2>/dev/null |
+                grep -vxE 'npm|corepack|' | tr '\n' ' ')"
+            if [ -n "$OWN_GLOBALS" ]; then
+                echo "Keeping Node.js $value: it has global npm packages installed later: $OWN_GLOBALS"
+                KEEP_NVM=1
+                KEPT_IN_USE+=("Node.js $value")
+            elif [ -s "$HOME/.nvm/nvm.sh" ]; then
+                echo "Removing Node.js $value from NVM"
                 (
                     set +u
                     export NVM_DIR="$HOME/.nvm"
@@ -199,8 +247,12 @@ for entry in "${OTHER_ENTRIES[@]}"; do
             ;;
 
         nvm)
-            echo "Removing NVM: $value"
-            if [ "$value" = "$HOME/.nvm" ]; then
+            OTHER_NODES="$(ls "$value/versions/node" 2>/dev/null | tr '\n' ' ')"
+            if [ "$KEEP_NVM" -eq 1 ] || [ -n "$OTHER_NODES" ]; then
+                echo "Keeping NVM: it still has Node.js versions in use: ${OTHER_NODES:-$value}"
+                KEPT_IN_USE+=("NVM")
+            elif [ "$value" = "$HOME/.nvm" ]; then
+                echo "Removing NVM: $value"
                 rm -rf "$value"
 
                 if [ -f "$HOME/.bashrc" ]; then
@@ -318,6 +370,9 @@ if [ ${#REMAINING[@]} -eq 0 ]; then
 
     echo "=== Uninstall completed ==="
     echo "Everything recorded by install.sh was removed."
+    if [ ${#KEPT_IN_USE[@]} -gt 0 ]; then
+        echo "Kept because you use them: ${KEPT_IN_USE[*]}"
+    fi
 else
     # REMAINING is newest-first; write it back in original order
     printf '%s\n' "${REMAINING[@]}" | tac > "$MANIFEST"

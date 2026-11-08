@@ -91,7 +91,9 @@ BUILD_JOBS=4 ./install.sh
 ./uninstall.sh
 ```
 
-`install.sh` records every change it makes in `~/.local/state/smart-device-display/installed.list`, and `uninstall.sh` removes only those. Anything that was there before the installation stays. `~/Apollo-Linux` is kept if it contains your own changes.
+`install.sh` records every change it makes in `~/.local/state/smart-device-display/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
+
+A few things intentionally stay after uninstalling: the kernel headers (other kernel modules may need them), the system libraries updated by the GCC 13 repository (rolling them back would break the system), and the Hermes settings and pairings in `~/.config/hermes`, which you can delete by hand.
 
 ---
 

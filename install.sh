@@ -237,6 +237,7 @@ apt_install \
     libcurl4-openssl-dev \
     libminiupnpc-dev \
     libdrm-dev \
+    libevdev-dev \
     libcap-dev \
     libva-dev \
     libva-drm2 \
@@ -323,6 +324,11 @@ fi
 
 nvm use 22
 
+# The Hermes web UI build fills the npm cache (about 200 MB).
+# It is only a cache, so uninstall.sh may remove it even if
+# npm was used for something else later.
+[ -e "$HOME/.npm" ] || record dir "$HOME/.npm"
+
 # ------------------------------------------------------------
 # 8. Install Intel VAAPI driver
 # ------------------------------------------------------------
@@ -366,48 +372,7 @@ cmake -B build -G Ninja -S . \
     -DCMAKE_CXX_COMPILER=/usr/bin/g++-13
 
 # ------------------------------------------------------------
-# 11. Fix bundled libevdev if necessary
-# ------------------------------------------------------------
-
-echo
-echo "=== Checking libevdev ==="
-
-LIBEVDEV_ROOT="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev"
-LIBEVDEV_BUILD="$PROJECT_DIR/build/libevdev-1.13.2/src/libevdev-build"
-LIBEVDEV_ARCHIVE="$LIBEVDEV_ROOT/libevdev-1.13.2.tar.xz"
-LIBEVDEV_SOURCE="$LIBEVDEV_ROOT/libevdev-1.13.2"
-LIBEVDEV_LIBRARY="$LIBEVDEV_BUILD/libevdev/.libs/libevdev.a"
-
-if [ ! -f "$LIBEVDEV_LIBRARY" ]; then
-
-    mkdir -p "$LIBEVDEV_ROOT"
-
-    if [ ! -f "$LIBEVDEV_ARCHIVE" ]; then
-        wget \
-            -O "$LIBEVDEV_ARCHIVE" \
-            https://www.freedesktop.org/software/libevdev/libevdev-1.13.2.tar.xz
-    fi
-
-    if [ ! -d "$LIBEVDEV_SOURCE" ]; then
-        tar -xf "$LIBEVDEV_ARCHIVE" -C "$LIBEVDEV_ROOT"
-    fi
-
-    cd "$LIBEVDEV_SOURCE"
-
-    if [ ! -f "libevdev/.libs/libevdev.a" ]; then
-        ./configure
-        make -j"$(nproc)"
-    fi
-
-    mkdir -p "$LIBEVDEV_BUILD/libevdev/.libs"
-
-    cp \
-        "libevdev/.libs/libevdev.a" \
-        "$LIBEVDEV_LIBRARY"
-fi
-
-# ------------------------------------------------------------
-# 12. Build Hermes
+# 11. Build Hermes
 # ------------------------------------------------------------
 
 echo
@@ -420,7 +385,7 @@ cd "$PROJECT_DIR"
 ninja -C build -j"${BUILD_JOBS:-1}"
 
 # ------------------------------------------------------------
-# 13. Install runtime assets
+# 12. Install runtime assets
 # ------------------------------------------------------------
 
 echo
@@ -457,7 +422,7 @@ else
 fi
 
 # ------------------------------------------------------------
-# 14. Verify Hermes binary
+# 13. Verify Hermes binary
 # ------------------------------------------------------------
 
 echo
@@ -466,7 +431,7 @@ echo "=== Hermes version ==="
 "$PROJECT_DIR/build/sunshine" --version
 
 # ------------------------------------------------------------
-# 15. Keep sound on the computer's own speakers
+# 14. Keep sound on the computer's own speakers
 # ------------------------------------------------------------
 
 # Without this Hermes switches the whole system's sound to the tablet
@@ -487,7 +452,7 @@ if ! grep -qsE '^[[:space:]]*stream_audio[[:space:]]*=' "$HERMES_CONFIG"; then
 fi
 
 # ------------------------------------------------------------
-# 16. Create / update desktop launcher
+# 15. Create / update desktop launcher
 # ------------------------------------------------------------
 
 echo
@@ -511,7 +476,7 @@ EOF
 chmod +x "$LAUNCHER"
 
 # ------------------------------------------------------------
-# 17. Final checks
+# 16. Final checks
 # ------------------------------------------------------------
 
 echo
