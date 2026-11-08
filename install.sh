@@ -191,7 +191,7 @@ if [ ! -d "$PROJECT_DIR/.git" ]; then
         exit 1
     fi
 
-    git clone https://github.com/MrOz59/Apollo-Linux "$PROJECT_DIR"
+    git clone https://github.com/MrOz59/Hermes "$PROJECT_DIR"
     record dir "$PROJECT_DIR"
 fi
 
