@@ -12,7 +12,7 @@ BACKUP_DIR="$STATE_DIR/backup"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_PATCH="$SCRIPT_DIR/patches/evdi-fix.patch"
 
-echo "=== SmartDeviceDisplay uninstall ==="
+echo "=== Screen Spawner uninstall ==="
 
 if [ ! -s "$MANIFEST" ]; then
     echo "Install manifest not found or empty:"

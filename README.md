@@ -1,54 +1,89 @@
-# SmartDeviceDisplay
+# Screen Spawner
 
-**SmartDeviceDisplay** aims to turn any number of smart devices (tablets, phones, smart TVs) into **extra monitors** for a Linux computer, connected over your home Wi-Fi network.
+**Screen Spawner** turns an **Android** tablet into a wireless second monitor for an **Ubuntu** computer, over your home Wi-Fi network.
 
-The goal is for each device to be either:
+![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
-* an **extended display**: a separate monitor with its own workspace, or
-* a **mirrored display**: a copy of an existing screen.
+*From left: HDMI monitor, laptop screen, and an Android tablet as the third display.*
 
-> **Current status:** the scripts set up **one extended virtual display**, and the setup has only been used with one Android tablet. With the EVDI backend Hermes supports a single virtual display; more than one needs its Hermes-KMS backend, which these scripts do not install. Mirroring and smart TVs have not been tested.
+It is built on **Hermes + Moonlight**: Hermes runs on the laptop, creates the virtual monitor and streams it, and Moonlight on the tablet shows it and sends touch, mouse and keyboard input back.
 
-You don't need cables, special hardware, or a custom app on the device. SmartDeviceDisplay uses **low-latency game-streaming technology** and ties together existing open-source tools:
+The tablet works either as an **extended display**, a separate monitor with its own workspace, or as a **mirrored display**, a copy of the laptop screen. It works at the same time as a physical external monitor connected to the laptop: the tablet is simply one more display. You don't need cables, special hardware, or a purpose-built app on the tablet.
+
+> **Current status:** works with one Android tablet running Moonlight. The tablet is a second monitor, extended or mirrored, with mouse, keyboard and touch, no noticeable latency, and no desktop freezes in a three-hour session. It can be used together with additional physical monitors. Artemis, phones and smart TVs have not been tested.
+
+### Tested on
+
+Ubuntu 22.04 with GNOME on X11.
+
+## Goal
+
+Turning a tablet into a real second monitor is a solved problem on Windows and macOS, but for Linux I found no open-source solution that does it on X11: a separate monitor the system treats as real, hardware video encoding and touch input on the tablet. The available options either only mirror the existing screen, need a dummy HDMI plug, need a Wayland session or a newer GNOME, or encode the picture on the CPU.
+
+Screen Spawner fills that gap: it installs and configures the tools below together and fixes what stopped them from working together on X11. The long-term goal is any number of devices (tablets, phones, smart TVs), each either extended or mirrored.
+
+---
+
+## How it works
+
+The picture travels the way game streaming does:
+
+```text
+Ubuntu laptop
+  applications
+       ↓
+  EVDI virtual monitor     the system sees it as a second monitor
+       ↓
+  Hermes                   captures the monitor
+       ↓
+  Intel VAAPI              encodes it to H.264 / HEVC in hardware
+       ↓
+  ─── local network ───
+       ↓
+Android tablet
+  Moonlight                receives the stream
+       ↓
+  hardware decoder
+       ↓
+  tablet screen
+```
+
+Touches, mouse and keyboard input on the tablet travel back the same way.
 
 | Component | Role |
 |-----------|------|
 | [EVDI](https://github.com/DisplayLink/evdi) | Linux kernel module that creates virtual displays the OS treats as real monitors |
-| [Apollo-Linux / Hermes](https://github.com/MrOz59/Apollo-Linux) | Linux port of Apollo, a fork of [Sunshine](https://github.com/LizardByte/Sunshine). It captures each virtual display and streams it |
-| Intel VAAPI | Hardware H.264 / HEVC encoding for low CPU usage and low latency |
-| [Artemis](https://github.com/ClassicOldSong/moonlight-android) / [Moonlight](https://moonlight-stream.org/) | Client on the device: Android phones, tablets, Android TV and Google TV, plus other platforms Moonlight supports |
+| [Hermes](https://github.com/MrOz59/Hermes) | Streaming server, a Linux port of Apollo, which is a fork of [Sunshine](https://github.com/LizardByte/Sunshine). It creates the virtual display, captures it and streams it |
+| Intel VAAPI | Hardware H.264 / HEVC encoding, so the CPU stays free |
+| [Moonlight](https://moonlight-stream.org/) / [Artemis](https://github.com/ClassicOldSong/moonlight-android) | Client on the device. It decodes the video in hardware |
 
-The repository contains scripts that install, configure, and remove the whole stack on Ubuntu.
+Unlike ordinary remote desktop, the tablet is not limited to a copy of the existing screen: as an extended display, applications can be moved to it like to any other monitor. And unlike sending raw frames, only a compressed video stream crosses the network, and it never leaves your local network.
+
+---
+
+## Requirements
+
+* **Tested only on Ubuntu 22.04 with GNOME on X11 and an Intel GPU.** Hermes itself also supports Wayland and other GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
+* An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
+* An internet connection during installation only: `install.sh` downloads packages and the Hermes source code
 
 ---
 
 ## Installation
 
-### Requirements
-
-* Ubuntu with an X11 session; tested on Ubuntu 22.04 with GNOME
-* **An Intel GPU.** The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so AMD and NVIDIA GPUs get no hardware encoding from this setup
-* `sudo` access and an internet connection
-
-### Install
-
 ```bash
-git clone https://github.com/itkawa/smart-device-display
-cd smart-device-display
+git clone https://github.com/itkawa/screen-spawner
+cd screen-spawner
 ./install.sh
 ```
 
-The script installs the dependencies, configures EVDI to load at boot, and builds Hermes in `~/Apollo-Linux` from a tested commit with the fix from `patches/evdi-fix.patch`.
+The script installs the dependencies, configures EVDI to load at boot, builds Hermes in `~/Apollo-Linux` from a tested commit with the fixes from `patches/evdi-fix.patch`, and adds a **Hermes** launcher to the application menu.
 
 The build uses a single job by default, because parallel compilation can run out of memory on laptops, and it takes a long time. To build faster:
 
 ```bash
 BUILD_JOBS=4 ./install.sh
 ```
-
-When it finishes, continue with [Starting Hermes](#15-starting-hermes) and [Pairing the tablet](#5-pairing-the-tablet).
-
-`additional_monitor_cfg.sh` is not part of the installation: Hermes does not read the file it creates.
 
 ### Uninstall
 
@@ -60,616 +95,85 @@ When it finishes, continue with [Starting Hermes](#15-starting-hermes) and [Pair
 
 ---
 
-## Apollo-Linux / Hermes + EVDI
+## Usage
 
-The current setup has been tested with an Android tablet and an Ubuntu laptop on the same local network.
+### Start Hermes
 
-The project combines:
-
-* **EVDI** — creates a real virtual display on Linux
-* **Hermes / Apollo-Linux** — captures and streams the virtual display
-* **Intel VAAPI** — hardware H.264 / HEVC video encoding
-* **Artemis / Moonlight-compatible Android client** — displays the streamed monitor on the tablet
-
-The goal is not traditional screen mirroring.
-
-The intended setup is:
-
-```text
-┌──────────────────────── Ubuntu laptop ────────────────────────┐
-│                                                               │
-│  Applications / games                                        │
-│          │                                                    │
-│          ▼                                                    │
-│     EVDI virtual monitor                                     │
-│          │                                                    │
-│          ▼                                                    │
-│     Hermes / Apollo-Linux                                    │
-│          │                                                    │
-│          ▼                                                    │
-│     Intel VAAPI hardware encoder                             │
-│          │                                                    │
-└──────────┼────────────────────────────────────────────────────┘
-           │
-           │ H.264 / HEVC over local network
-           ▼
-    ┌─────────────────┐
-    │ Android tablet  │
-    │ Artemis/Moonlight│
-    └─────────────────┘
-```
-
----
-
-# 1. Why use a virtual display?
-
-A normal remote-desktop application usually captures the existing desktop.
-
-That is not what we want.
-
-The target configuration is:
-
-```text
-Laptop display
-     +
-EVDI virtual display
-```
-
-The operating system sees the virtual display as an additional monitor.
-
-Therefore applications can be placed on it independently.
-
-For example:
-
-```text
-┌─────────────────────┐    ┌─────────────────────┐
-│                     │    │                     │
-│   Main laptop      │    │   EVDI display      │
-│   monitor          │    │                     │
-│                     │    │                     │
-└─────────────────────┘    └─────────────────────┘
-          laptop                  tablet
-```
-
-This makes the Android tablet behave conceptually like a second monitor rather than a mirrored copy of the first one.
-
----
-
-# 2. Why EVDI?
-
-EVDI provides a virtual display interface at the Linux DRM level.
-
-The important distinction is:
-
-```text
-Physical monitor
-      OR
-Virtual monitor
-```
-
-The application does not need to know that the second display is physically somewhere else.
-
-Linux can treat the EVDI display as another output.
-
-This is exactly what we need for the architecture.
-
----
-
-# 3. Why Hermes / Apollo-Linux?
-
-Hermes is the streaming server used in this setup.
-
-It provides:
-
-* virtual display support through EVDI
-* screen capture
-* hardware video encoding
-* network streaming
-* client pairing
-* Web UI
-* Sunshine/Moonlight-compatible streaming functionality
-
-The binary in this build is still named:
-
-```text
-sunshine
-```
-
-while the application identifies itself as Hermes.
-
----
-
-# 4. Android tablet
-
-The tablet needs a compatible client such as Artemis or another Moonlight-compatible Android client.
-
-The tablet does **not** need to receive raw desktop frames.
-
-Instead, Hermes encodes the display into a compressed video stream:
-
-```text
-Virtual display
-      ↓
-Video frames
-      ↓
-H.264 / HEVC
-      ↓
-Network packets
-      ↓
-Android hardware decoder
-      ↓
-Tablet screen
-```
-
-The tablet therefore performs primarily:
-
-```text
-network receiving
-+
-hardware video decoding
-+
-display
-```
-
-rather than rendering the desktop itself.
-
----
-
-# 5. Pairing the tablet
-
-Start Hermes on Ubuntu:
+Start **Hermes** from the application menu, or from a terminal:
 
 ```bash
 cd ~/Apollo-Linux
 ./build/sunshine
 ```
 
-Open:
+The launcher opens a terminal window on purpose, so startup errors stay visible. To stop Hermes, press `Ctrl+C` in that window.
 
-```text
-https://localhost:47990
-```
+Hermes has to be started again after every reboot.
 
-Complete the initial Hermes setup.
+### Pair the tablet (once)
 
-Then install the compatible client on the Android tablet.
+1. On the laptop, open the Hermes Web UI at <https://localhost:47990> and complete the initial setup.
+2. On the tablet, install Moonlight and add the laptop. Moonlight usually finds it on the local network by itself; otherwise add it by IP address.
+3. Moonlight shows a PIN. Enter it in the Hermes Web UI.
 
-The tablet and Ubuntu laptop should be connected to the same local network.
+### Connect
 
-Add the Ubuntu computer in the Android client.
+In Moonlight, open the laptop and choose **Desktop**. Hermes creates the virtual monitor at that moment, and the tablet shows it. The virtual monitor does not exist before a client connects.
 
-The client will provide a pairing PIN.
+### Mouse, keyboard and touch
 
-Enter that PIN in the Hermes Web UI.
+The tablet works alongside the laptop's own input devices, the way a touchpad and a USB mouse do on a laptop: they share one cursor and one keyboard focus.
 
-After pairing, the tablet can connect to Hermes.
+A touch moves the cursor straight to the touched point on the tablet. Hermes reads the position of the virtual display when the stream starts, so reconnect after rearranging monitors.
 
----
+### Sound
 
-# 6. Network topology
+The tablet's speakers are not used. All sound, including from windows on the tablet, plays through the computer's own output: the laptop speakers, headphones, or whatever is selected in the system sound settings.
 
-The preferred setup is:
-
-```text
-Ubuntu laptop
-     │
-     │ Wi-Fi / Ethernet
-     │
-     ▼
-Local router
-     │
-     │ Wi-Fi
-     ▼
-Android tablet
-```
-
-An Ethernet connection for the laptop is preferable when available.
-
-A good 5 GHz Wi-Fi connection can also work very well.
-
-The important point is that both devices should be on the same local network with a stable, low-latency connection.
+`install.sh` sets this with the line `stream_audio = false` in `~/.config/hermes/hermes.conf`. Without it, Hermes sends the whole system's sound to the tablet while it is connected, and the laptop goes silent. To get that behaviour, remove the line and restart Hermes.
 
 ---
 
-# 7. Why we expect this to be fast
+## What has been tested
 
-The important thing is that the system does **not** send an uncompressed framebuffer across the network.
+With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 
-A typical display might be:
-
-```text
-1920 × 1080 × 60 FPS
-```
-
-Sending raw frames would require an enormous amount of bandwidth.
-
-Instead, the pipeline is:
-
-```text
-EVDI
-  ↓
-capture
-  ↓
-hardware video encoding
-  ↓
-compressed H.264 / HEVC
-  ↓
-LAN/Wi-Fi
-  ↓
-hardware decoding
-  ↓
-display
-```
-
-This is essentially the same general strategy used by game-streaming technologies.
+* the tablet works as an extended monitor and as a mirrored one;
+* it works at the same time as a physical HDMI monitor: laptop screen, HDMI monitor and tablet are three displays side by side;
+* mouse, keyboard and touch input reach the tablet's display;
+* there was no noticeable latency in use. The latency has not been measured with instruments;
+* a three-hour session with video playing ran without a single desktop freeze.
 
 ---
 
-# 8. Hardware encoding
+## Known issues
 
-Our Intel GPU exposes:
-
-```text
-h264_vaapi
-```
-
-and:
-
-```text
-hevc_vaapi
-```
-
-to Hermes.
-
-This is important because video encoding is performed by dedicated GPU/media hardware rather than being entirely handled by the CPU.
-
-The target path is therefore:
-
-```text
-CPU
- └── application / desktop rendering
-
-Intel media hardware
- └── H.264 / HEVC encoding
-
-Network
- └── compressed stream
-
-Android hardware
- └── video decoding
-```
-
-This reduces CPU overhead and avoids the latency that a heavily loaded software encoder could introduce.
+* **The virtual monitor stays after you quit Moonlight.** Hermes only pauses the session, so the monitor remains in the display settings, and windows on it stay out of sight until you reconnect or stop Hermes.
+* **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
+* **No autostart.** Hermes has to be started by hand after every reboot.
 
 ---
 
-# 9. Why this can have low latency
+## Troubleshooting
 
-The total delay can be thought of approximately as:
+### Hermes does not start
 
-```text
-capture
-+
-encode
-+
-network
-+
-decode
-+
-display
+Start it from a terminal and look at the errors:
+
+```bash
+cd ~/Apollo-Linux
+./build/sunshine
 ```
 
-We are optimizing every stage.
-
-### Capture
-
-EVDI provides a dedicated virtual display rather than requiring an external camera or physical capture device.
-
-### Encoding
-
-Intel VAAPI provides hardware H.264/HEVC encoding.
-
-### Network
-
-The stream stays inside the local network.
-
-There is no requirement to send the video through an external cloud server.
-
-### Decoding
-
-Modern Android devices normally have dedicated hardware video decoders.
-
-Therefore the tablet does not need to decode the video entirely on the CPU.
-
----
-
-# 10. Why an IP address does not make it faster
-
-The important factor is not the IP address itself.
-
-Latency depends on the entire pipeline:
-
-```text
-capture
-→ encode
-→ network
-→ decode
-→ display
-```
-
-Using a local IP helps because it allows the stream to remain inside the LAN.
-
-But the actual latency depends on:
-
-* Wi-Fi quality
-* network congestion
-* encoder latency
-* bitrate
-* resolution
-* frame rate
-* Android decoder latency
-* tablet display refresh behaviour
-
----
-
-# 11. Why we expect this to be substantially better than ordinary remote desktop
-
-Traditional remote desktop software may perform additional desktop-level processing, compression and synchronization.
-
-Our architecture is closer to a game-streaming pipeline:
-
-```text
-virtual display
-      ↓
-video encoder
-      ↓
-low-latency network stream
-      ↓
-hardware decoder
-      ↓
-display
-```
-
-That is a much more suitable architecture for a second-screen use case where responsiveness matters.
-
-However, the exact latency must be measured on the actual laptop, network and tablet.
-
-We should not assume that theoretical hardware capabilities automatically mean imperceptible latency.
-
----
-
-# 12. Target configuration
-
-The preferred initial test configuration is:
-
-```text
-Resolution:
-1920 × 1080
-
-Refresh rate:
-60 Hz
-
-Codec:
-H.264
-
-Encoder:
-Intel VAAPI
-
-Network:
-5 GHz Wi-Fi or Ethernet + 5 GHz Wi-Fi
-
-Client:
-Artemis / Moonlight-compatible Android client
-```
-
-H.264 is a good first test because it generally provides excellent hardware support and relatively low decoding complexity.
-
-HEVC can be tested afterwards.
-
----
-
-# 13. Expected data path
-
-The complete path is:
-
-```text
-                  LAPTOP
-
-┌─────────────────────────────────────────────┐
-│                                             │
-│  Application / Game                         │
-│           │                                 │
-│           ▼                                 │
-│  EVDI Virtual Monitor                       │
-│           │                                 │
-│           ▼                                 │
-│  Hermes Capture                             │
-│           │                                 │
-│           ▼                                 │
-│  Intel VAAPI                                │
-│  H.264 / HEVC Encoder                       │
-│           │                                 │
-└───────────┼─────────────────────────────────┘
-            │
-            │ Local network
-            ▼
-┌─────────────────────────────────────────────┐
-│              ANDROID TABLET                 │
-│                                             │
-│  Network                                    │
-│      ↓                                      │
-│  Hardware Video Decoder                     │
-│      ↓                                      │
-│  Artemis / Moonlight                        │
-│      ↓                                      │
-│  Tablet Display                             │
-│                                             │
-└─────────────────────────────────────────────┘
-```
-
----
-
-# 14. What has already been validated
-
-The build has successfully demonstrated:
-
-### EVDI
-
-```text
-EVDI kernel module
-```
-
-is loaded.
-
-Hermes reports:
+Messages such as `Failed to gain CAP_SYS_ADMIN` or `Couldn't get handle for DRM Framebuffer` are expected in this setup and do not mean anything is broken. What matters is:
 
 ```text
 EVDI available - real virtual displays supported!
-```
-
-and:
-
-```text
 Linux virtual display driver initialized successfully.
-```
-
-### Hardware encoding
-
-Hermes reports:
-
-```text
 Found H.264 encoder: h264_vaapi [vaapi]
 ```
 
-and:
-
-```text
-Found HEVC encoder: hevc_vaapi [vaapi]
-```
-
-### Web UI
-
-Hermes provides:
-
-```text
-https://localhost:47990
-```
-
-### Remaining end-to-end validation
-
-The final part still needs to be tested:
-
-```text
-EVDI virtual monitor
-        ↓
-Ubuntu sees second display
-        ↓
-Hermes streams it
-        ↓
-Android client receives it
-        ↓
-Tablet shows the virtual display
-```
-
-Only after this test can we call the complete second-monitor setup validated.
-
----
-
-# 15. Starting Hermes
-
-From the terminal:
-
-```bash
-cd ~/Apollo-Linux
-./build/sunshine
-```
-
-Or use the installed desktop launcher:
-
-```text
-Hermes
-```
-
-The launcher intentionally uses:
-
-```text
-Terminal=true
-```
-
-during the initial setup so that startup errors remain visible.
-
-Once everything is stable, this can be changed to a background launcher.
-
----
-
-# 16. Checking the virtual monitor
-
-With Hermes running:
-
-```bash
-xrandr --query
-```
-
-and:
-
-```bash
-xrandr --listmonitors
-```
-
-These commands can be used to check whether Ubuntu sees the additional virtual display.
-
----
-
-# 17. Performance expectations
-
-The goal is not to claim that the tablet will behave exactly like a physical DisplayPort/HDMI monitor.
-
-There will always be some additional latency because the signal must be:
-
-```text
-captured
-→ encoded
-→ transmitted
-→ decoded
-→ displayed
-```
-
-A physical monitor avoids most of this pipeline.
-
-The reason this architecture is promising is that the expensive parts are specifically designed to be fast:
-
-```text
-Intel hardware encoder
-+
-local network
-+
-Android hardware decoder
-```
-
-With a good local network, sensible bitrate and a capable tablet, the result should feel substantially more responsive than a traditional remote-desktop session.
-
-The actual result should be measured rather than assumed.
-
----
-
-# 18. Troubleshooting
-
-## Hermes does not start
-
-Check:
-
-```bash
-cd ~/Apollo-Linux
-./build/sunshine
-```
-
-Look for errors in the terminal.
-
----
-
-## EVDI is missing
-
-Check:
+### EVDI is missing
 
 ```bash
 lsmod | grep evdi
@@ -681,140 +185,47 @@ If nothing appears:
 sudo modprobe evdi
 ```
 
----
+### No virtual monitor appears
 
-## No virtual display appears
-
-Check:
+The virtual monitor exists only while a client is connected. With Moonlight connected, check:
 
 ```bash
-xrandr --query
-```
-
-and:
-
-```bash
+xrandr --listmonitors
 cat /sys/devices/evdi/count
 ```
 
-Also make sure Hermes is running.
-
----
-
-## VAAPI encoder is missing
-
-Run:
+### No hardware encoder
 
 ```bash
 vainfo
-```
-
-Check that the Intel media driver is installed:
-
-```bash
 dpkg -l | grep intel-media-va-driver
 ```
 
-Hermes should ideally report:
-
-```text
-h264_vaapi
-```
+`vainfo` should list H.264 and HEVC encoding profiles, and Hermes should report `h264_vaapi` at startup.
 
 ---
 
-## CAP_SYS_ADMIN / KMS warning
+## Repository contents
 
-A message such as:
-
-```text
-Failed to gain CAP_SYS_ADMIN
-Couldn't get handle for DRM Framebuffer
-```
-
-does not automatically mean the EVDI/X11 configuration is broken.
-
-The important checks for this setup are:
-
-```text
-EVDI available
-Linux virtual display driver initialized successfully
-h264_vaapi
-```
+| File | Purpose |
+|------|---------|
+| `install.sh` | Installs the dependencies, EVDI and Hermes |
+| `uninstall.sh` | Removes what `install.sh` installed |
+| `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, libevdi 1.12 on Ubuntu 22.04 |
+| `config.sh` | Older EVDI setup script. It is not part of the installation: `install.sh` now configures EVDI itself |
+| `additional_monitor_cfg.sh` | Older monitor layout script. It is not part of the installation: Hermes does not read the file it creates |
 
 ---
 
-# 19. Project philosophy
-
-This project deliberately uses the simplest architecture that gives us a real virtual monitor:
-
-```text
-EVDI
-+
-Hermes
-+
-VAAPI
-+
-Android streaming client
-```
-
-We are not adding unnecessary components such as:
-
-* CUDA
-* NVIDIA-specific software
-* cloud streaming services
-* Gamescope
-* physical DisplayLink hardware
-
-The objective is to keep the path short:
-
-```text
-virtual display
-→ hardware encode
-→ local network
-→ hardware decode
-→ tablet
-```
-
-That short path is the main reason we expect the system to be responsive.
-
----
-
-# 20. Final goal
-
-The finished setup should make the Android tablet behave like a wireless second monitor:
-
-```text
-                 ┌─────────────────┐
-                 │ Laptop display  │
-                 └─────────────────┘
-
-                 ┌─────────────────┐
-                 │ Android tablet  │
-                 │                 │
-                 │ EVDI display    │
-                 └─────────────────┘
-```
-
-The laptop remains responsible for the actual application rendering.
-
-The tablet primarily receives and displays the compressed video representation of the virtual monitor.
-
-This is the intended architecture of the project.
-
----
-
-# Author
+## Author
 
 Developed by [itkawa](https://github.com/itkawa).
 
-Repository: <https://github.com/itkawa/smart-device-display>
-
-Bug reports and suggestions are welcome via [GitHub Issues](https://github.com/itkawa/smart-device-display/issues).
+Bug reports and suggestions are welcome via [GitHub Issues](https://github.com/itkawa/screen-spawner/issues).
 
 ---
 
-# License
+## License
 
 Copyright (C) 2026 itkawa
 
@@ -822,4 +233,16 @@ This project is licensed under the **GNU General Public License v3.0**. See [LIC
 
 You may use, modify, and redistribute it. Any distributed modified version must also be released under GPL-3.0.
 
-Third-party components (EVDI, Apollo-Linux / Hermes, Sunshine, Moonlight, Artemis) are separate projects with their own licenses.
+`patches/evdi-fix.patch` changes the source code of Hermes and is licensed under GPL-3.0, like Hermes itself.
+
+This repository contains no third-party code other than that patch. The main components are separate projects with their own licenses, obtained from their own sources:
+
+| Component | License |
+|-----------|---------|
+| Hermes, Apollo, Sunshine | GPL-3.0 |
+| EVDI kernel module | GPL-2.0 |
+| EVDI library (libevdi) | LGPL-2.1 |
+| Moonlight, Artemis (installed on the device) | GPL-3.0 |
+| NVM | MIT |
+
+If you distribute a built copy of Hermes with this patch, GPL-3.0 requires you to provide its source code, including the patch, and to state that it was modified.
