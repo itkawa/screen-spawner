@@ -129,6 +129,11 @@ Out of the box, the **Desktop** app does not create a virtual monitor, and the t
 
 Save. The setting applies from the next connection.
 
+There are two ways to mirror:
+
+- **Mirror** as above: the tablet is a virtual monitor that shows a copy of the main screen. The mode can be switched between Extend and Mirror at any time.
+- **Always create Virtual Display** turned off: Hermes streams the laptop's main screen itself, without a virtual monitor. Nothing changes in the display settings.
+
 While the tablet is connected, it can be moved in **Settings → Displays** like any other monitor; touch and the cursor follow it without reconnecting.
 
 ### Connect
@@ -172,7 +177,9 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 
 ## Roadmap
 
-A **Screen Spawner** app in the top bar, so that Hermes and the tablet are set up without the Web UI:
+Version 0.1.0 has no app of its own: Hermes is started from the application menu and set up in its Web UI, as described above. Release history is in [CHANGELOG.md](CHANGELOG.md).
+
+Planned for a later version is an optional **Screen Spawner** app in the top bar, so that Hermes and the tablet can be set up without the Web UI. Installing it will be optional, and the Web UI way will keep working. The app would:
 
 * start and stop Hermes, start it at login;
 * pair a new tablet by typing its PIN;
@@ -241,6 +248,7 @@ dpkg -l | grep intel-media-va-driver
 |------|---------|
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
 | `uninstall.sh` | Removes what `install.sh` installed |
+| `CHANGELOG.md` | Release history and planned changes |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11, libevdi 1.12 on Ubuntu 22.04 |
 
 ---
