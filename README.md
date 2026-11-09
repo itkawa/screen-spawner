@@ -1,6 +1,6 @@
 # Screen Spawner
 
-**Screen Spawner** turns an **Android** tablet into a wireless second monitor for an **Ubuntu** computer, over your home Wi-Fi network.
+**Screen Spawner** turns an **Android** tablet into a wireless second monitor for **Linux** on GNOME, through the standard **Moonlight** app, alongside your physical monitors. It works over your home Wi-Fi network; no internet connection is needed once it is installed.
 
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
@@ -14,13 +14,22 @@ The tablet works either as an **extended display**, a separate monitor with its 
 
 ### Tested on
 
-Ubuntu 22.04 with GNOME, on X11 and on Wayland. The installer was also tested on a clean Ubuntu 24.04.
+Ubuntu 22.04 with GNOME, on X11 and on Wayland. The installer was also tested on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13.
 
 ## Goal
 
-Turning a tablet into a real second monitor is a solved problem on Windows and macOS, but for Linux I found no open-source solution that does it on X11: a separate monitor the system treats as real, hardware video encoding and touch input on the tablet. The available options either only mirror the existing screen, need a dummy HDMI plug, need a Wayland session or a newer GNOME, or encode the picture on the CPU.
+Turning a tablet into a real second monitor is a solved problem on Windows and macOS, but on Linux it is harder: a separate monitor the system treats as real, hardware video encoding and touch input on the tablet. The available options usually only mirror the existing screen, need a USB cable, a dedicated app on the tablet or a dummy HDMI plug, or encode the picture on the CPU.
 
-Screen Spawner fills that gap: it installs and configures the tools below together and fixes what stopped them from working together on X11. The long-term goal is any number of devices (tablets, phones, smart TVs), each either extended or mirrored.
+What Screen Spawner does differently:
+
+* **wireless**: the tablet connects over the home Wi-Fi network, no cable;
+* **no app of its own on the tablet**: it uses Moonlight, available from Google Play;
+* **GNOME on X11 and Wayland**, with the tablet as a separate screen or a mirror;
+* **together with physical monitors**: laptop screen, HDMI monitor and tablet side by side, rearranged during a session;
+* **hardware video encoding** on the GPU (VAAPI);
+* **one script to install, one to uninstall**, removing exactly what was installed.
+
+It installs and configures the tools below together and fixes what stopped them from working together. The long-term goal is any number of devices (tablets, phones, smart TVs), each either extended or mirrored.
 
 ---
 
@@ -63,7 +72,7 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 
 ## Requirements
 
-* **Tested only on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU.** Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
+* **A distribution with apt:** the installer was tested on Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13. Streaming with the tablet was tested on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU. Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
 * An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
 * An internet connection during installation only: `install.sh` downloads packages and the Hermes source code
 
@@ -167,7 +176,7 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
 
-The installation and uninstallation were tested end to end on clean Ubuntu 22.04 and 24.04 systems in a container. A container has no desktop, so streaming was not tried there.
+The installation and uninstallation were tested end to end on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13 systems in a container. A container has no desktop, so streaming was not tried there.
 
 ---
 
@@ -243,6 +252,8 @@ dpkg -l | grep intel-media-va-driver
 ```
 
 `vainfo` should list H.264 and HEVC encoding profiles, and Hermes should report `h264_vaapi` at startup.
+
+On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-driver-non-free` package from the `non-free` repository instead of `intel-media-va-driver`.
 
 ---
 

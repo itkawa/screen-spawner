@@ -256,30 +256,44 @@ apt_install \
     ninja-build
 
 # ------------------------------------------------------------
-# 4. Install GCC 13 if needed
+# 4. Choose the compiler: the system GCC if it is 13 or newer, else GCC 13
 # ------------------------------------------------------------
 
 echo
-echo "=== Checking GCC 13 ==="
+echo "=== Checking GCC ==="
 
-if ! command -v gcc-13 >/dev/null 2>&1 || \
-   ! command -v g++-13 >/dev/null 2>&1; then
+# Hermes needs GCC 13 or newer. Where the system compiler is new enough
+# (Ubuntu 24.04+), use it: system libraries such as Qt are built with it, and
+# linking them with an older GCC fails on a newer libstdc++ ABI.
+SYSTEM_GCC_MAJOR="$(gcc -dumpversion 2>/dev/null | cut -d. -f1)"
 
-    # The toolchain PPA is added only when gcc-13 is not available in the
-    # standard repositories (it is on Ubuntu 24.04+). Besides gcc-13 the PPA
-    # also upgrades system libraries such as libstdc++6 and libgcc-s1.
-    if ! first_available gcc-13 >/dev/null 2>&1 && \
-       ! grep -qs "ubuntu-toolchain-r/test" \
-        /etc/apt/sources.list \
-        /etc/apt/sources.list.d/*.list \
-        /etc/apt/sources.list.d/*.sources; then
+if [ "${SYSTEM_GCC_MAJOR:-0}" -ge 13 ] 2>/dev/null && command -v g++ >/dev/null 2>&1; then
+    echo "Using the system GCC $SYSTEM_GCC_MAJOR."
+    BUILD_CC=/usr/bin/gcc
+    BUILD_CXX=/usr/bin/g++
+else
+    if ! command -v gcc-13 >/dev/null 2>&1 || \
+       ! command -v g++-13 >/dev/null 2>&1; then
 
-        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-        record ppa ubuntu-toolchain-r/test
-        sudo apt update
+        # The toolchain PPA is added only when gcc-13 is not available in the
+        # standard repositories. Besides gcc-13 the PPA also upgrades system
+        # libraries such as libstdc++6 and libgcc-s1.
+        if ! first_available gcc-13 >/dev/null 2>&1 && \
+           ! grep -qs "ubuntu-toolchain-r/test" \
+            /etc/apt/sources.list \
+            /etc/apt/sources.list.d/*.list \
+            /etc/apt/sources.list.d/*.sources; then
+
+            sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+            record ppa ubuntu-toolchain-r/test
+            sudo apt update
+        fi
+
+        apt_install gcc-13 g++-13
     fi
-
-    apt_install gcc-13 g++-13
+    echo "Using GCC 13 (the system GCC is ${SYSTEM_GCC_MAJOR:-unknown})."
+    BUILD_CC=/usr/bin/gcc-13
+    BUILD_CXX=/usr/bin/g++-13
 fi
 
 # ------------------------------------------------------------
@@ -289,9 +303,18 @@ fi
 echo
 echo "=== Checking CMake ==="
 
+# Hermes needs CMake 3.24 or newer. Take it from apt where apt has one that
+# new (Ubuntu 24.04+, Debian 13, Linux Mint 22); otherwise from snap, which
+# Linux Mint blocks and Debian does not ship by default.
 if ! command -v cmake >/dev/null 2>&1; then
-    sudo snap install cmake --classic
-    record snap cmake
+    APT_CMAKE="$(apt-cache policy cmake 2>/dev/null | awk '/Candidate:/ {print $2}')"
+    if [ -n "$APT_CMAKE" ] && [ "$APT_CMAKE" != "(none)" ] && \
+       dpkg --compare-versions "$APT_CMAKE" ge 3.24; then
+        apt_install cmake
+    else
+        sudo snap install cmake --classic
+        record snap cmake
+    fi
 fi
 
 # ------------------------------------------------------------
@@ -366,11 +389,20 @@ echo "=== Configuring Apollo-Linux ==="
 
 cd "$PROJECT_DIR"
 
+# CMake drops a cache built with another compiler and then forgets the options
+# below, so start that configuration over (after an earlier run with GCC 13).
+if [ -f build/CMakeCache.txt ] && \
+   ! grep -qxF -e "CMAKE_CXX_COMPILER:STRING=$BUILD_CXX" \
+               -e "CMAKE_CXX_COMPILER:FILEPATH=$BUILD_CXX" build/CMakeCache.txt; then
+    echo "The compiler changed since the last build; reconfiguring from scratch."
+    rm -rf build/CMakeCache.txt build/CMakeFiles
+fi
+
 cmake -B build -G Ninja -S . \
     -DSUNSHINE_ENABLE_CUDA=OFF \
     -DCUDA_FAIL_ON_MISSING=OFF \
-    -DCMAKE_C_COMPILER=/usr/bin/gcc-13 \
-    -DCMAKE_CXX_COMPILER=/usr/bin/g++-13
+    -DCMAKE_C_COMPILER="$BUILD_CC" \
+    -DCMAKE_CXX_COMPILER="$BUILD_CXX"
 
 # ------------------------------------------------------------
 # 11. Build Hermes

@@ -20,7 +20,7 @@ Without an app of its own: Hermes is started from the application menu and set u
 - The tablet can be moved in the display settings during a session, and touch input follows it.
 - Sound stays on the computer's speakers.
 
-Tested on Ubuntu 22.04, GNOME on X11 and on Wayland, Intel GPU. Installation and uninstallation were tested end to end on clean Ubuntu 22.04 and 24.04 systems.
+Tested on Ubuntu 22.04, GNOME on X11 and on Wayland, Intel GPU. Installation and uninstallation were tested end to end on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13 systems.
 
 ### Fixes for Hermes
 
@@ -35,6 +35,7 @@ Tested on Ubuntu 22.04, GNOME on X11 and on Wayland, Intel GPU. Installation and
 ### Installation
 
 - `install.sh` installs the dependencies, configures EVDI and builds Hermes from a tested revision.
+- Works on Ubuntu, Linux Mint and Debian: it uses the system GCC and CMake where they are new enough, and GCC 13 and CMake from snap only on Ubuntu 22.04.
 - `uninstall.sh` removes only what `install.sh` added, shows the list and asks first, and keeps Node.js and NVM if they are in use.
 
 ### Known issues
