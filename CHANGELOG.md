@@ -14,7 +14,7 @@ Without an app of its own: Hermes is started from the application menu and set u
 
 ### Works
 
-- An Android tablet with Moonlight as a wireless second monitor for Ubuntu, extended or mirrored.
+- An Android tablet or phone with Moonlight as a wireless second monitor for Linux, extended or mirrored.
 - Mouse, keyboard and touch input on the tablet.
 - Together with physical monitors: tested with an HDMI monitor, the laptop screen and the tablet as three displays.
 - The tablet can be moved in the display settings during a session, and touch input follows it.
@@ -43,3 +43,4 @@ Tested on Ubuntu 22.04, GNOME on X11 and on Wayland, Intel GPU. Installation and
 - The virtual monitor stays after quitting Moonlight, until Hermes is stopped or the tablet reconnects.
 - A VPN on the tablet can block the connection to Hermes.
 - Hermes does not start automatically after a reboot.
+- One virtual monitor at a time: a second device joins the same session and shows the same screen.

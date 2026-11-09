@@ -1,6 +1,6 @@
 # Screen Spawner
 
-**Screen Spawner** turns an **Android** tablet into a wireless second monitor for **Linux** on GNOME, through the standard **Moonlight** app, alongside your physical monitors. It works over your home Wi-Fi network; no internet connection is needed once it is installed.
+**Screen Spawner** turns an **Android** tablet or phone into a wireless second monitor for **Linux** on GNOME, through the standard **Moonlight** app, alongside your physical monitors. It works over your home Wi-Fi network; no internet connection is needed once it is installed.
 
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
@@ -125,7 +125,12 @@ Hermes has to be started again after every reboot.
 
 1. On the laptop, open the Hermes Web UI at <https://localhost:47990> and complete the initial setup.
 2. On the tablet, install Moonlight and add the laptop. Moonlight usually finds it on the local network by itself; otherwise add it by IP address.
-3. Moonlight shows a PIN. Enter it in the Hermes Web UI.
+3. Moonlight shows a PIN. Enter it on the **PIN** page of the Hermes Web UI.
+4. Grant the tablet its permissions on the same page, in the list of paired devices below the PIN field: **Launch Apps**, **View Streams**, **List Apps**, and **Touch Input**, **Mouse Input** and **Keyboard Input**. A newly paired device can only list the apps and watch, so without **Launch Apps** Moonlight disconnects as soon as you choose **Desktop**.
+
+Every further device, such as a phone, is paired and given its permissions the same way.
+
+A phone with Moonlight works as a second monitor the same way as a tablet. Moonlight streams in 16:9, so a phone with a longer screen shows black bars at the sides.
 
 ### Set up the Desktop app (once)
 
@@ -172,7 +177,8 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * it works at the same time as a physical HDMI monitor: laptop screen, HDMI monitor and tablet are three displays side by side;
 * mouse, keyboard and touch input reach the tablet's display;
 * there was no noticeable latency in use. The latency has not been measured with instruments;
-* a three-hour session with video playing ran without a single desktop freeze.
+* a three-hour session with video playing ran without a single desktop freeze;
+* an Android phone with Moonlight works as a second monitor too: picture, touch, mouse, and rearranging the monitors.
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
 
@@ -185,6 +191,7 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 * **The virtual monitor stays after you quit Moonlight.** Hermes only pauses the session, so the monitor remains in the display settings, and windows on it stay out of sight until you reconnect or stop Hermes.
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
 * **No autostart.** Hermes has to be started by hand after every reboot.
+* **One extra monitor at a time.** With EVDI, Hermes creates a single virtual monitor. A second device that connects, for example a phone while the tablet is connected, joins the same session and shows the same screen; both can control it. A separate screen per device is planned.
 
 ---
 
