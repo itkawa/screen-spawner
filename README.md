@@ -14,7 +14,7 @@ The tablet works either as an **extended display**, a separate monitor with its 
 
 ### Tested on
 
-Ubuntu 22.04 with GNOME on X11.
+Ubuntu 22.04 with GNOME, on X11 and on Wayland. The installer was also tested on a clean Ubuntu 24.04.
 
 ## Goal
 
@@ -63,7 +63,7 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 
 ## Requirements
 
-* **Tested only on Ubuntu 22.04 with GNOME on X11 and an Intel GPU.** Hermes itself also supports Wayland and other GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
+* **Tested only on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU.** Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
 * An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
 * An internet connection during installation only: `install.sh` downloads packages and the Hermes source code
 
@@ -165,6 +165,10 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * there was no noticeable latency in use. The latency has not been measured with instruments;
 * a three-hour session with video playing ran without a single desktop freeze.
 
+On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
+
+The installation and uninstallation were tested end to end on clean Ubuntu 22.04 and 24.04 systems in a container. A container has no desktop, so streaming was not tried there.
+
 ---
 
 ## Known issues
@@ -249,7 +253,7 @@ dpkg -l | grep intel-media-va-driver
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `CHANGELOG.md` | Release history and planned changes |
-| `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11, libevdi 1.12 on Ubuntu 22.04 |
+| `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11 and Wayland, libevdi 1.12 on Ubuntu 22.04 |
 
 ---
 

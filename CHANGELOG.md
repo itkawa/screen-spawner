@@ -20,7 +20,7 @@ Without an app of its own: Hermes is started from the application menu and set u
 - The tablet can be moved in the display settings during a session, and touch input follows it.
 - Sound stays on the computer's speakers.
 
-Tested on Ubuntu 22.04, GNOME on X11, Intel GPU. Installation and uninstallation were tested end to end on a clean Ubuntu 22.04 system.
+Tested on Ubuntu 22.04, GNOME on X11 and on Wayland, Intel GPU. Installation and uninstallation were tested end to end on clean Ubuntu 22.04 and 24.04 systems.
 
 ### Fixes for Hermes
 
@@ -29,7 +29,7 @@ Tested on Ubuntu 22.04, GNOME on X11, Intel GPU. Installation and uninstallation
 - desktop freezes with EVDI (`flip_done timed out`) and the kernel log flooding with `Update was already requested`;
 - mouse and touch input landing on the wrong screen on X11;
 - the input position following the tablet when monitors are rearranged on X11;
-- the Mirror layout on X11, and the capture following the tablet's mode change;
+- the Mirror layout on X11 and Wayland, and the capture following the tablet's mode change;
 - libevdi 1.12 on Ubuntu 22.04.
 
 ### Installation

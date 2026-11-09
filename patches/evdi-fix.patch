@@ -56,7 +56,7 @@ index 89987125..473113f7 100644
  
      class display_vram_t: public display_t {
 diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
-index 84617d2e..6a0b8dee 100644
+index 84617d2e..3d06c07c 100644
 --- a/src/platform/linux/virtual_display.cpp
 +++ b/src/platform/linux/virtual_display.cpp
 @@ -153,7 +153,8 @@ namespace VDISPLAY {
@@ -69,7 +69,45 @@ index 84617d2e..6a0b8dee 100644
    typedef void (*fn_evdi_disconnect)(evdi_handle handle);
    typedef void (*fn_evdi_grab_pixels)(evdi_handle handle, struct evdi_rect *rects, int *num_rects);
    typedef void (*fn_evdi_register_buffer)(evdi_handle handle, struct evdi_buffer buffer);
-@@ -5307,6 +5308,34 @@ namespace VDISPLAY {
+@@ -4519,6 +4520,37 @@ namespace VDISPLAY {
+ 
+     static void unwatch_layout() {}
+ #endif
++
++    /**
++     * The current mode of the primary monitor, from Mutter's own state, so a
++     * virtual output can offer it and be mirrored onto. Used on Wayland, where
++     * xrandr only sees Xwayland's view.
++     */
++    static bool primary_mode(uint32_t &width, uint32_t &height) {
++      state_t state;
++      if (!parse_current_state(command_output(get_current_state_command), state)) {
++        return false;
++      }
++      for (const auto &lm : state.logical_monitors) {
++        if (lm.primary != "true" || lm.connectors.empty()) {
++          continue;
++        }
++        const auto mode_id = state.current_mode.find(lm.connectors.front());
++        const auto *monitor = state.find_monitor(lm.connectors.front());
++        if (mode_id == state.current_mode.end() || !monitor) {
++          return false;
++        }
++        for (const auto &mode : monitor->modes) {
++          if (mode.id == mode_id->second && mode.width > 0 && mode.height > 0) {
++            width = mode.width;
++            height = mode.height;
++            return true;
++          }
++        }
++        return false;
++      }
++      return false;
++    }
+   }  // namespace mutter
+ 
+   EvdiBuffer::EvdiBuffer(uint32_t width, uint32_t height):
+@@ -5307,6 +5339,37 @@ namespace VDISPLAY {
      dtd[17] = 0x1E; // Digital separate sync, positive H and V
    }
  
@@ -77,7 +115,10 @@ index 84617d2e..6a0b8dee 100644
 +   * The mode of the primary X11 monitor. It is offered as a second EDID mode,
 +   * because GNOME mirrors only between outputs that share a mode size.
 +   */
-+  static bool x11_primary_mode(uint32_t &width, uint32_t &height) {
++  static bool primary_monitor_mode(uint32_t &width, uint32_t &height) {
++    if (window_system == window_system_e::WAYLAND) {
++      return mutter::available() && mutter::primary_mode(width, height);
++    }
 +    if (window_system != window_system_e::X11) {
 +      return false;
 +    }
@@ -104,18 +145,18 @@ index 84617d2e..6a0b8dee 100644
    static unsigned char *generate_edid_for_resolution(uint32_t width, uint32_t height, uint32_t refresh_rate) {
      static unsigned char edid[256]; // Support for 1 extension block
      memset(edid, 0, sizeof(edid));
-@@ -5381,9 +5410,18 @@ namespace VDISPLAY {
+@@ -5381,9 +5444,18 @@ namespace VDISPLAY {
      edid[101] = 0x0A; // Newline padding
      for (int i = 102; i < 108; i++) edid[i] = 0x20; // Space padding
  
 -    // Descriptor 4: Dummy/unused
 -    edid[108] = 0x00; edid[109] = 0x00; edid[110] = 0x00; edid[111] = 0x10; edid[112] = 0x00;
 -    for (int i = 113; i < 126; i++) edid[i] = 0x20;
-+    // Descriptor 4: on X11, the primary monitor's mode, so the desktop can be
++    // Descriptor 4: the primary monitor's mode, so the desktop can be
 +    // mirrored onto this output; otherwise dummy/unused
 +    uint32_t mirror_width = 0;
 +    uint32_t mirror_height = 0;
-+    if (x11_primary_mode(mirror_width, mirror_height) && (mirror_width != width || mirror_height != height)) {
++    if (primary_monitor_mode(mirror_width, mirror_height) && (mirror_width != width || mirror_height != height)) {
 +      create_detailed_timing_descriptor(&edid[108], mirror_width, mirror_height, 60);
 +      BOOST_LOG(info) << "[VDISPLAY] EDID also offers " << mirror_width << 'x' << mirror_height
 +                      << " for mirroring the primary monitor";
@@ -126,7 +167,7 @@ index 84617d2e..6a0b8dee 100644
  
      // Extension flag: 1 extension block (for resolutions > 1080p)
      bool needs_extension = (width > 1920 || height > 1080);
-@@ -5437,11 +5475,28 @@ namespace VDISPLAY {
+@@ -5437,11 +5509,28 @@ namespace VDISPLAY {
    static void evdi_events_loop() {
      evdi_event_context event_context {};
      event_context.update_ready_handler = [](int, void *) {};
@@ -155,7 +196,7 @@ index 84617d2e..6a0b8dee 100644
  
      while (evdi_events_running) {
        {
-@@ -5463,18 +5518,60 @@ namespace VDISPLAY {
+@@ -5463,18 +5552,60 @@ namespace VDISPLAY {
            pollfd poll_fd {};
            poll_fd.fd = evdi.get_event_ready(display.handle);
            poll_fd.events = POLLIN;
@@ -221,7 +262,7 @@ index 84617d2e..6a0b8dee 100644
            const auto refresh_rate = std::max<uint32_t>(display.fps, 1);
            const auto session_interval = std::chrono::microseconds {1000000 / refresh_rate};
            next_grab_by_handle[display.handle] = now + std::clamp(session_interval, min_grab_interval, max_grab_interval);
-@@ -5487,6 +5584,9 @@ namespace VDISPLAY {
+@@ -5487,6 +5618,9 @@ namespace VDISPLAY {
              ++it;
            }
          }
@@ -231,7 +272,7 @@ index 84617d2e..6a0b8dee 100644
        }
  
        // A 1 ms pump keeps pageflip-to-capture wakeup below one millisecond
-@@ -5948,7 +6048,7 @@ namespace VDISPLAY {
+@@ -5948,7 +6082,7 @@ namespace VDISPLAY {
  
            // Connect with EDID (no area limit)
            BOOST_LOG(info) << "[VDISPLAY] Connecting with " << edid_size << "-byte EDID for " << width << "x" << height;
@@ -240,7 +281,7 @@ index 84617d2e..6a0b8dee 100644
  
            // The DRM node is added asynchronously after connect(). Poll at a
            // short interval: this is on the stream-start critical path, so the
-@@ -6154,7 +6254,7 @@ namespace VDISPLAY {
+@@ -6154,7 +6288,7 @@ namespace VDISPLAY {
            unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz);
            unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
            BOOST_LOG(info) << "[VDISPLAY] Reconnecting with " << edid_size << "-byte EDID for " << width << "x" << height;
@@ -249,7 +290,7 @@ index 84617d2e..6a0b8dee 100644
          } else if (vdinfo.using_hermes_kms && vdinfo.drm_fd >= 0) {
            if (!hermes_kms::set_output(vdinfo.drm_fd, true, width, height, refresh_hz, vdinfo.session_id)) {
              return -1;
-@@ -6212,7 +6312,8 @@ namespace VDISPLAY {
+@@ -6212,7 +6346,8 @@ namespace VDISPLAY {
            continue;
          }
          std::error_code ec;
@@ -259,7 +300,7 @@ index 84617d2e..6a0b8dee 100644
          if (!ec && module == "evdi") {
            return name.substr(prefix.size());
          }
-@@ -6475,6 +6576,69 @@ namespace VDISPLAY {
+@@ -6475,6 +6610,69 @@ namespace VDISPLAY {
  #endif
    }
  
@@ -329,7 +370,7 @@ index 84617d2e..6a0b8dee 100644
    bool activateVirtualDisplayOutput(const std::string &displayName) {
      // KWin is configured when the display is created - enabled, placed and
      // driven at the requested mode in one kscreen-doctor transaction - so
-@@ -6590,6 +6754,52 @@ namespace VDISPLAY {
+@@ -6590,6 +6788,52 @@ namespace VDISPLAY {
      }
  
      BOOST_LOG(info) << "[VDISPLAY] Activated X11 virtual output " << connector;
