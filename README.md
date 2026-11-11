@@ -6,6 +6,10 @@
 
 *From left: HDMI monitor, laptop screen, and an Android tablet as the third display.*
 
+![GNOME display settings with three displays: the HDMI monitor, the laptop screen and the tablet](docs/display-settings.png)
+
+*GNOME Settings → Displays sees the tablet (3) as a regular monitor: it can be moved, mirrored or made primary like the others.*
+
 It is built on **Hermes + Moonlight**: Hermes runs on the laptop, creates the virtual monitor and streams it, and Moonlight on the tablet shows it and sends touch, mouse and keyboard input back.
 
 The tablet works either as an **extended display**, a separate monitor with its own workspace, or as a **mirrored display**, a copy of the laptop screen. It works at the same time as a physical external monitor connected to the laptop: the tablet is simply one more display. You don't need cables, special hardware, or a purpose-built app on the tablet.
