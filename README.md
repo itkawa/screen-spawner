@@ -1,6 +1,10 @@
 # Screen Spawner
 
-**Screen Spawner** turns an **Android** tablet or phone into a wireless second monitor for **Linux** on GNOME, through the standard **Moonlight** app, alongside your physical monitors. It works over your home Wi-Fi network; no internet connection is needed once it is installed.
+**Screen Spawner** turns an **Android** tablet or phone into a wireless second or third monitor for **Linux** through the standard **Moonlight** app, alongside your physical monitors. It works over your home Wi-Fi network; no internet connection is needed once it is installed.
+
+Use an Android tablet as an extra screen for Linux, a phone as a portable display for your laptop, or a tablet as a third monitor next to an HDMI one. No USB cable, no HDMI dummy plug, and no dedicated app on the tablet beyond Moonlight. The tablet becomes an extended display or a mirror of your screen, with touch input, and the system sees it as a real monitor.
+
+**Tested configurations (current release):** GNOME on X11 and Wayland; Ubuntu, Linux Mint, and Debian.
 
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
