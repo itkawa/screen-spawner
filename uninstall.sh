@@ -96,7 +96,7 @@ echo "=== Stopping Hermes ==="
 
 # Anchored to the start of the command line, so it matches only the
 # Hermes binary itself, not shells or editors that mention its path.
-pkill -TERM -f '^([^ ]*/)?build/sunshine(-[0-9.]+)?( |$)' 2>/dev/null || true
+pkill -TERM -f '^([^ ]*/)?(build/)?sunshine(-[0-9][[:alnum:]_.+~-]*)?( |$)' 2>/dev/null || true
 sleep 1
 
 # ------------------------------------------------------------
@@ -127,11 +127,35 @@ normalize() {
     sed "s/:$ARCH\$//"
 }
 
+# A dependency transaction can introduce a package marked Essential or Protected (for
+# example systemd-sysv on minimal Debian 13). Never purge those packages or
+# anything they require, even when they appear in an older install manifest.
+mapfile -t ESSENTIAL < <(
+    dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package} ${Essential} ${Protected}\n' 2>/dev/null \
+        | awk '$1 ~ /^ii/ && ($3 == "yes" || $4 == "yes") { print $2 }'
+)
+PROTECTED="$(
+    if [ ${#ESSENTIAL[@]} -gt 0 ]; then
+        apt-cache depends --recurse --installed \
+            --no-recommends --no-suggests --no-conflicts \
+            --no-breaks --no-replaces --no-enhances \
+            "${ESSENTIAL[@]}" 2>/dev/null \
+            | awk '/^[^[:space:]<]/ {print $1}'
+        printf '%s\n' "${ESSENTIAL[@]}"
+    fi
+)"
+PROTECTED="$(printf '%s\n' "$PROTECTED" | normalize | sort -u)"
+KEPT_SYSTEM=()
 PKGS=()
 
 for pkg in "${APT_ENTRIES[@]}"; do
     if dpkg-query -W -f='${db:Status-Abbrev}' "$pkg" 2>/dev/null | grep -q '^ii'; then
-        PKGS+=("$pkg")
+        if printf '%s\n' "$PROTECTED" | grep -qxF "$(printf '%s\n' "$pkg" | normalize)"; then
+            echo "Keeping a system requirement: $pkg"
+            KEPT_SYSTEM+=("$pkg")
+        else
+            PKGS+=("$pkg")
+        fi
     fi
 done
 
@@ -369,7 +393,10 @@ if [ ${#REMAINING[@]} -eq 0 ]; then
     rmdir "$STATE_DIR" 2>/dev/null || true
 
     echo "=== Uninstall completed ==="
-    echo "Everything recorded by install.sh was removed."
+    echo "All recorded items were removed or retained as system requirements."
+    if [ ${#KEPT_SYSTEM[@]} -gt 0 ]; then
+        echo "Kept for essential/protected system packages: ${KEPT_SYSTEM[*]}"
+    fi
     if [ ${#KEPT_IN_USE[@]} -gt 0 ]; then
         echo "Kept because you use them: ${KEPT_IN_USE[*]}"
     fi

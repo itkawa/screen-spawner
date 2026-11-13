@@ -3,6 +3,17 @@
 
 set -e
 
+BUILD_FROM_SOURCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --build-from-source) BUILD_FROM_SOURCE=1 ;;
+        -h|--help)
+            echo "Usage: $0 [--build-from-source]"
+            exit 0 ;;
+        *) echo "ERROR: unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
 echo "=== Apollo-Linux / Hermes + EVDI installation ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,10 +79,10 @@ installed_packages() {
 # libstdc++6, which then require the new gcc-16-base. Removing it later
 # would break the whole system, including apt itself.
 apt_install() {
-    local before after pkg
+    local before after pkg status=0
 
     before="$(installed_packages)"
-    sudo apt install -y "$@"
+    sudo apt install -y "$@" || status=$?
     after="$(installed_packages)"
 
     while read -r pkg; do
@@ -92,6 +103,7 @@ apt_install() {
 
         record apt "$pkg"
     done < <(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+    return "$status"
 }
 
 # Print the first package name that exists in the apt repositories.
@@ -176,6 +188,116 @@ if ! grep -qsxF evdi /etc/modules /etc/modules-load.d/*.conf; then
     echo evdi | sudo tee -a /etc/modules >/dev/null
 fi
 
+# Release package checksums are pinned here, never fetched alongside the package.
+select_package() {
+    local ID= VERSION_ID= ID_LIKE= UBUNTU_CODENAME= VERSION_CODENAME=
+    [ -r /etc/os-release ] || return 1
+    . /etc/os-release
+    [ "$(dpkg --print-architecture)" = amd64 ] || return 1
+    PACKAGE_SYSTEM=
+    case "$ID:$VERSION_ID" in
+        ubuntu:22.04) PACKAGE_SYSTEM=ubuntu22.04 ;;
+        ubuntu:24.04) PACKAGE_SYSTEM=ubuntu24.04 ;;
+        ubuntu:26.04) PACKAGE_SYSTEM=ubuntu26.04 ;;
+        debian:13|debian:13.*) PACKAGE_SYSTEM=debian13 ;;
+        linuxmint:22|linuxmint:22.*)
+            [ "$UBUNTU_CODENAME" = noble ] || return 1
+            PACKAGE_SYSTEM=ubuntu24.04 ;;
+        *)
+            case " $ID_LIKE " in
+                *" ubuntu "*)
+                    case "$UBUNTU_CODENAME" in
+                        jammy) PACKAGE_SYSTEM=ubuntu22.04 ;;
+                        noble) PACKAGE_SYSTEM=ubuntu24.04 ;;
+                        resolute) PACKAGE_SYSTEM=ubuntu26.04 ;;
+                    esac ;;
+            esac ;;
+    esac
+    case "$PACKAGE_SYSTEM" in
+        ubuntu22.04) PACKAGE_SHA256="5bd1c0bb6ae61720068aaf2b99e222676ac2eb203019642290072329107ae7a7" ;;
+        ubuntu24.04) PACKAGE_SHA256="26e42ceb8225f2203b8dae6be30f697ef39bbee85cb020b35ac867d0d815999f" ;;
+        ubuntu26.04) PACKAGE_SHA256="6f2bd430f3e80f73ccbfdef2e365b478901db7195c9947c30a58d84fcf0fc37d" ;;
+        debian13) PACKAGE_SHA256="c0178cdf89df3b734b19fef147b35d2f09d80030d84425f4e0e7cbf1fd796657" ;;
+        *) return 1 ;;
+    esac
+    PACKAGE_FILE="hermes-screen-spawner_0.5.1+ss0.1.1_${PACKAGE_SYSTEM}_amd64.deb"
+}
+
+confirm_source_build() {
+    local answer
+    echo
+    echo "A verified prebuilt Hermes package could not be installed."
+    echo "Building Hermes from source may take about an hour."
+    while true; do
+        if ! read -r -p "Continue with the source build? [Y/n]: " answer; then
+            echo
+            echo "Installation stopped before building Hermes."
+            return 1
+        fi
+        case "$answer" in
+            ""|[yY]|[yY][eE][sS]) return 0 ;;
+            [nN]|[nN][oO])
+                echo "Installation stopped before building Hermes."
+                return 1 ;;
+            *) echo "Please answer yes or no." ;;
+        esac
+    done
+}
+
+install_release_package() {
+    local download_dir package_path status=0
+    select_package || return 1
+    if dpkg-query -W -f='${db:Status-Abbrev}' hermes 2>/dev/null | grep -q '^ii'; then
+        echo "WARNING: the official Hermes package is installed; leaving it in place."
+        return 1
+    fi
+    echo
+    echo "=== Installing the Hermes release package ($PACKAGE_SYSTEM) ==="
+    download_dir="$(mktemp -d)" || return 1
+    chmod 755 "$download_dir"
+    package_path="$download_dir/$PACKAGE_FILE"
+    if [ -n "${SCREEN_SPAWNER_PACKAGE_DIR:-}" ]; then
+        cp -- "$SCREEN_SPAWNER_PACKAGE_DIR/$PACKAGE_FILE" "$package_path" || status=$?
+    else
+        if ! command -v curl >/dev/null 2>&1; then
+            apt_install curl ca-certificates || status=$?
+        fi
+        if [ "$status" -eq 0 ]; then
+            curl --fail --location --retry 3 --connect-timeout 20 \
+                --max-time 600 --output "$package_path" \
+                "https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.1.1/$PACKAGE_FILE" || status=$?
+        fi
+    fi
+    if [ "$status" -eq 0 ]; then
+        chmod 644 "$package_path" || status=$?
+    fi
+    if [ "$status" -eq 0 ]; then
+        printf '%s  %s\n' "$PACKAGE_SHA256" "$package_path" | sha256sum --check --status || status=$?
+    fi
+    if [ "$status" -eq 0 ]; then
+        chmod 644 "$package_path"
+        apt_install "$package_path" || status=$?
+    fi
+    rm -rf -- "$download_dir"
+    [ "$status" -eq 0 ] || return 1
+    HERMES_COMMAND=/usr/bin/sunshine
+    HERMES_WORKDIR="$HOME"
+    return 0
+}
+
+HERMES_COMMAND="$PROJECT_DIR/build/sunshine"
+HERMES_WORKDIR="$PROJECT_DIR"
+PACKAGE_INSTALLED=0
+if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
+    if install_release_package; then
+        PACKAGE_INSTALLED=1
+    else
+        confirm_source_build || exit 0
+        echo "=== Building Hermes from source ==="
+    fi
+fi
+
+if [ "$PACKAGE_INSTALLED" -eq 0 ]; then
 # ------------------------------------------------------------
 # 2. Clone or reuse Apollo-Linux
 # ------------------------------------------------------------
@@ -229,6 +351,7 @@ echo "=== Installing build dependencies ==="
 
 apt_install \
     build-essential \
+    python3 \
     pkg-config \
     git \
     wget \
@@ -354,33 +477,6 @@ nvm use 22
 [ -e "$HOME/.npm" ] || record dir "$HOME/.npm"
 
 # ------------------------------------------------------------
-# 8. Install Intel VAAPI driver
-# ------------------------------------------------------------
-
-echo
-echo "=== Checking Intel VAAPI ==="
-
-if ! dpkg -s intel-media-va-driver >/dev/null 2>&1; then
-    apt_install intel-media-va-driver
-fi
-
-# ------------------------------------------------------------
-# 9. Check VAAPI
-# ------------------------------------------------------------
-
-echo
-echo "=== VAAPI check ==="
-
-if command -v vainfo >/dev/null 2>&1; then
-    vainfo || true
-else
-    echo "WARNING: vainfo is not installed."
-    echo "Installing vainfo for verification..."
-    apt_install vainfo
-    vainfo || true
-fi
-
-# ------------------------------------------------------------
 # 10. Configure CMake
 # ------------------------------------------------------------
 
@@ -427,6 +523,8 @@ echo "=== Installing runtime assets ==="
 ASSETS_SRC="$PROJECT_DIR/build/assets"
 ASSETS_DST="/usr/local/assets"
 
+python3 "$SCRIPT_DIR/packaging/add-source-notice.py" "$ASSETS_SRC/web"
+
 if [ -d "$ASSETS_SRC" ]; then
 
     # Record only directories and files that do not exist yet.
@@ -454,6 +552,35 @@ else
     exit 1
 fi
 
+fi # source build and runtime asset installation
+
+# ------------------------------------------------------------
+# 8. Install Intel VAAPI driver
+# ------------------------------------------------------------
+
+echo
+echo "=== Checking Intel VAAPI ==="
+
+if ! dpkg -s intel-media-va-driver >/dev/null 2>&1; then
+    apt_install intel-media-va-driver
+fi
+
+# ------------------------------------------------------------
+# 9. Check VAAPI
+# ------------------------------------------------------------
+
+echo
+echo "=== VAAPI check ==="
+
+if command -v vainfo >/dev/null 2>&1; then
+    vainfo || true
+else
+    echo "WARNING: vainfo is not installed."
+    echo "Installing vainfo for verification..."
+    apt_install vainfo
+    vainfo || true
+fi
+
 # ------------------------------------------------------------
 # 13. Verify Hermes binary
 # ------------------------------------------------------------
@@ -461,7 +588,7 @@ fi
 echo
 echo "=== Hermes version ==="
 
-"$PROJECT_DIR/build/sunshine" --version
+"$HERMES_COMMAND" --version
 
 # ------------------------------------------------------------
 # 14. Keep sound on the computer's own speakers
@@ -499,8 +626,8 @@ cat > "$LAUNCHER" <<EOF
 [Desktop Entry]
 Name=Hermes
 Comment=Game streaming server
-Exec=$PROJECT_DIR/build/sunshine
-Path=$PROJECT_DIR
+Exec="$HERMES_COMMAND"
+Path=$HERMES_WORKDIR
 Terminal=true
 Type=Application
 Categories=Network;
@@ -527,10 +654,10 @@ echo
 echo "--- Hermes binary ---"
 # build/sunshine is a symlink to a versioned binary (e.g. sunshine-0.5.1);
 # the version is not hardcoded, so updates of Apollo-Linux do not break this
-ls -lh "$PROJECT_DIR/build/sunshine"
+ls -lh "$HERMES_COMMAND"
 
-HERMES_BINARY="$(readlink -f "$PROJECT_DIR/build/sunshine")"
-if [ "$HERMES_BINARY" != "$PROJECT_DIR/build/sunshine" ]; then
+HERMES_BINARY="$(readlink -f "$HERMES_COMMAND")"
+if [ "$HERMES_BINARY" != "$HERMES_COMMAND" ]; then
     ls -lh "$HERMES_BINARY"
 fi
 
@@ -542,10 +669,10 @@ echo
 echo "=== Installation completed successfully ==="
 echo
 echo "Project:"
-echo "$PROJECT_DIR"
+echo "$HERMES_WORKDIR"
 echo
 echo "Start Hermes:"
-echo "$PROJECT_DIR/build/sunshine"
+echo "$HERMES_COMMAND"
 echo
 echo "Web UI:"
 echo "https://localhost:47990"
