@@ -1,0 +1,5 @@
+FROM debian:13
+ENV DEBIAN_FRONTEND=noninteractive
+COPY packaging/install-build-deps.sh /usr/local/bin/install-build-deps
+WORKDIR /build
+ENTRYPOINT ["bash", "/project/packaging/container-build.sh", "debian13"]

@@ -6,6 +6,17 @@ All notable changes to Screen Spawner are listed here.
 
 - An optional **Screen Spawner** app in the top bar: start and stop Hermes, pair a tablet by PIN, disconnect it, switch between extended and mirrored modes, set a scale for the tablet, choose the order of the displays. See the [Roadmap](README.md#roadmap).
 
+## 0.1.1
+
+- Ask before falling back to a Hermes source build, warn that it may take about an hour, and default to Yes (`[Y/n]`).
+
+- Complete corresponding-source archive, dependency/license inventory, third-party license notices and a source download link in the Hermes Web UI.
+
+- Prebuilt patched Hermes packages for amd64 Ubuntu 22.04/24.04/26.04, Linux Mint 22.x and Debian 13, verified with pinned SHA256 checksums; source build fallback and `--build-from-source`.
+- The Hermes launcher uses the installed package binary; uninstall removes the package and recorded dependencies.
+- Docker build and validation scripts for the modified GPL-3.0 Hermes packages.
+- Uninstall preserves essential/protected system packages and their required dependencies, including when they were added during installation on a minimal Debian system.
+
 ## 0.1.0
 
 First release.

@@ -82,7 +82,7 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 
 * **A distribution with apt:** the installer was tested on Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13. Streaming with the tablet was tested on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU. Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
 * An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
-* An internet connection during installation only: `install.sh` downloads packages and the Hermes source code
+* An internet connection during installation only: `install.sh` downloads packages (and the Hermes source code when building from source)
 
 ---
 
@@ -94,12 +94,31 @@ cd screen-spawner
 ./install.sh
 ```
 
-The script installs the dependencies, configures EVDI to load at boot, builds Hermes in `~/Apollo-Linux` from a tested commit with the fixes from `patches/evdi-fix.patch`, and adds a **Hermes** launcher to the application menu.
+Version 0.1.0 builds Hermes from source and can take 30–60 minutes.
+For installation from prebuilt packages, use **0.1.1 or newer**.
 
-The build uses a single job by default, because parallel compilation can run out of memory on laptops, and it takes a long time. To build faster:
+The script downloads a prebuilt, patched Hermes package from the **v0.1.1** release in the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds),
+checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
+to load at boot, and adds a **Hermes** launcher to the application menu.
+Packages are available for amd64 Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.x
+(the Ubuntu 24.04 package), and Debian 13. Installation normally takes a few
+minutes; the first EVDI kernel module build can take longer.
+
+If there is no matching package, the download fails or its checksum does not
+match, the script falls back to building Hermes in `~/Apollo-Linux` from the
+verified revision with `patches/evdi-fix.patch`. To request that explicitly:
 
 ```bash
-BUILD_JOBS=4 ./install.sh
+./install.sh --build-from-source
+```
+
+If a verified package cannot be installed, the installer asks `Continue with the source build? [Y/n]:` and warns that building may take about an hour. Press Enter or answer `y` to build; answer `n` to stop. `--build-from-source` requests the build directly without this question.
+
+A source build can take 30–60 minutes. It uses one job by default to limit
+memory use. On a machine with enough RAM, use:
+
+```bash
+BUILD_JOBS=4 ./install.sh --build-from-source
 ```
 
 ### Uninstall
@@ -108,9 +127,9 @@ BUILD_JOBS=4 ./install.sh
 ./uninstall.sh
 ```
 
-`install.sh` records every change it makes in `~/.local/state/screen-spawner/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
+The prebuilt package and its new dependencies are recorded too. `install.sh` records every change it makes in `~/.local/state/screen-spawner/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
 
-A few things intentionally stay after uninstalling: the kernel headers (other kernel modules may need them), the system libraries updated by the GCC 13 repository (rolling them back would break the system), and the Hermes settings and pairings in `~/.config/hermes`, which you can delete by hand.
+Essential/protected system packages and their dependencies are always kept, even if a dependency transaction added them during installation. The kernel headers (other kernel modules may need them) and the Hermes settings and pairings in `~/.config/hermes` intentionally stay after either installation path. A source build can also update system libraries through the GCC 13 repository; the uninstaller keeps those updates because rolling them back could break the system.
 
 ---
 
@@ -121,9 +140,10 @@ A few things intentionally stay after uninstalling: the kernel headers (other ke
 Start **Hermes** from the application menu, or from a terminal:
 
 ```bash
-cd ~/Apollo-Linux
-./build/sunshine
+/usr/bin/sunshine
 ```
+
+For a source installation, run `~/Apollo-Linux/build/sunshine` instead.
 
 The launcher opens a terminal window on purpose, so startup errors stay visible. To stop Hermes, press `Ctrl+C` in that window.
 
@@ -221,13 +241,28 @@ Planned for a later version is an optional **Screen Spawner** app in the top bar
 
 ## Troubleshooting
 
+### The prebuilt package does not work
+
+Run `sunshine --version` in a terminal and keep the error message. To use a
+source build instead:
+
+```bash
+./uninstall.sh
+./install.sh --build-from-source
+```
+
+The uninstaller preserves `~/.config/hermes`, including device pairings.
+The package is named `hermes-screen-spawner` and conflicts with official
+`hermes` packages: remove the other installation before switching between them.
+The build scripts and exact source revision are in [packaging/](packaging/).
+
+
 ### Hermes does not start
 
 Start it from a terminal and look at the errors:
 
 ```bash
-cd ~/Apollo-Linux
-./build/sunshine
+/usr/bin/sunshine
 ```
 
 Messages such as `Failed to gain CAP_SYS_ADMIN` or `Couldn't get handle for DRM Framebuffer` are expected in this setup and do not mean anything is broken. What matters is:
@@ -279,6 +314,7 @@ On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-dr
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `CHANGELOG.md` | Release history and planned changes |
+| `packaging/` | Docker builds and CPack packaging for modified Hermes |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11 and Wayland, libevdi 1.12 on Ubuntu 22.04 |
 
 ---
@@ -305,10 +341,17 @@ This repository contains no third-party code other than that patch. The main com
 
 | Component | License |
 |-----------|---------|
-| Hermes, Apollo, Sunshine | GPL-3.0 |
+| Hermes, Apollo, Sunshine | GPL-3.0-only |
+| shared-web (Hermes Web UI dependency) | AGPL-3.0-only |
 | EVDI kernel module | GPL-2.0 |
 | EVDI library (libevdi) | LGPL-2.1 |
 | Moonlight, Artemis (installed on the device) | GPL-3.0 |
 | NVM | MIT |
 
 If you distribute a built copy of Hermes with this patch, GPL-3.0 requires you to provide its source code, including the patch, and to state that it was modified.
+
+The prebuilt Hermes release also provides a complete corresponding-source
+archive, including dependency sources, exact component revisions, original
+licenses and build scripts. The Web UI links directly to that archive.
+See [third-party notices](packaging/THIRD-PARTY-NOTICES.md) and the release's
+**Release contents** section for the exact files being distributed.

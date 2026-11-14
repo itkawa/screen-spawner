@@ -1,0 +1,5 @@
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+COPY packaging/install-build-deps.sh /usr/local/bin/install-build-deps
+WORKDIR /build
+ENTRYPOINT ["bash", "/project/packaging/container-build.sh", "ubuntu24.04"]
