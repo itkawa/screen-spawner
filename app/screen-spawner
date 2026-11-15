@@ -110,6 +110,7 @@ class Hermes:
             urllib.request.HTTPSHandler(context=self._ssl), _NoRedirect)
         self._process = None
         self._pid = None
+        self._stopping = None
 
     # ---------- process ----------
 
@@ -178,21 +179,38 @@ class Hermes:
             stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=_die_with_parent)
 
     def stop(self):
-        """Ask Hermes to quit and wait for it. Blocking: call it off the GTK thread."""
+        """Stop Hermes and wait for it. Blocking: call it off the GTK thread.
+
+        With SIGTERM, not the Web UI's /api/quit: Hermes answers /api/quit from
+        a detached thread 5 s later, and when shutting down takes longer (closing
+        EVDI can take 8 s) that thread touches the destroyed web server and
+        Hermes crashes (exit 139). On SIGTERM it shuts down the same way, without
+        that thread."""
         log("stopping Hermes")
-        try:
-            self.post("/api/quit", {})
-        except HermesError as e:
-            pid = self.pid()
-            if pid:
-                log(f"Hermes did not take the quit request ({e}); sending SIGTERM to {pid}")
-                os.kill(pid, signal.SIGTERM)
-        for _ in range(100):
-            if self._process:
-                self._process.poll()
-            if not self.pid():
-                break
-            time.sleep(0.1)
+
+        def wait(seconds):
+            for _ in range(int(seconds * 10)):
+                if self._process:
+                    self._process.poll()
+                if not self.pid():
+                    return True
+                time.sleep(0.1)
+            return False
+
+        pid = self.pid()
+        if pid and self._stopping == pid:
+            log("Hermes is already stopping; waiting for it")
+        elif pid:
+            # Once only: a second signal while Hermes shuts down is not needed.
+            self._stopping = pid
+            os.kill(pid, signal.SIGTERM)
+        else:
+            try:
+                self.post("/api/quit", {})
+            except HermesError as e:
+                log(f"quit request: {e}")
+        if not wait(20):
+            log("Hermes still runs 20 s after it was asked to stop")
         self._process = None
 
     def app_running(self):
@@ -249,6 +267,7 @@ class Hermes:
             if client.get("uuid") not in before:
                 if int(client.get("perm", 0)) & DEVICE_PERMISSIONS != DEVICE_PERMISSIONS:
                     self.set_permissions(client)
+                log(f"paired {client.get('name')} ({client.get('uuid')}), permissions granted")
                 granted.append(client.get("name") or "The device")
         return granted
 
@@ -259,6 +278,7 @@ class Hermes:
             raise HermesError(f"Hermes did not update the permissions of {client.get('name')}.")
 
     def unpair(self, uuid):
+        log(f"removing paired device {uuid}")
         if not self.post("/api/clients/unpair", {"uuid": uuid}).get("status"):
             raise HermesError("Hermes did not remove the device.")
 
@@ -598,6 +618,8 @@ class ActivityPage(Gtk.Box):
         self._offset = 0
         self._inode = None
         self._timer = None
+        self._log_monitor = None
+        self._log_pending = False
 
     @staticmethod
     def heading(text):
@@ -614,12 +636,32 @@ class ActivityPage(Gtk.Box):
             return
         self._inode = None
         self.refresh()
+        # The numbers are counters and API answers: read once a second. The log
+        # is read only when the system reports that Hermes wrote to it.
         self._timer = GLib.timeout_add_seconds(1, self._on_timer)
+        self._log_monitor = Gio.File.new_for_path(self.LOG).monitor_file(
+            Gio.FileMonitorFlags.WATCH_MOVES, None)
+        self._log_monitor.connect("changed", self._on_log_changed)
+
+    def _on_log_changed(self, *_):
+        # Several events can come for one write; read once for all of them.
+        if not self._log_pending:
+            self._log_pending = True
+            GLib.timeout_add(200, self._read_log_once)
+
+    def _read_log_once(self):
+        self._log_pending = False
+        if self._timer:
+            self.refresh_log()
+        return False
 
     def stop(self):
         if self._timer:
             GLib.source_remove(self._timer)
             self._timer = None
+        if self._log_monitor:
+            self._log_monitor.cancel()
+            self._log_monitor = None
         self.buffer.set_text("")
         self._inode, self._offset = None, 0
         self.system.reset()
@@ -627,7 +669,8 @@ class ActivityPage(Gtk.Box):
             value.set_text("—")
 
     def _on_timer(self):
-        self.refresh()
+        self.refresh_metrics()
+        self.refresh_system()
         return True
 
     def refresh(self):
@@ -719,7 +762,10 @@ class Window(Gtk.ApplicationWindow):
 
         # Two pages, switched in the title bar: the controls, and what Hermes is
         # doing right now (stream statistics and its log).
-        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        # Each page takes the height it needs: the controls stay compact, and the
+        # window grows only while Activity, with its log, is open.
+        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE,
+                          vhomogeneous=False, interpolate_size=True)
         switcher = Gtk.StackSwitcher(stack=stack)
         header = Gtk.HeaderBar(show_close_button=True, custom_title=switcher)
         self.set_titlebar(header)
@@ -796,6 +842,9 @@ class Window(Gtk.ApplicationWindow):
             self.activity.start()
         else:
             self.activity.stop()
+            # Back on the controls: give up the height the log took.
+            if self.get_visible():
+                self.resize(self.get_size()[0], 1)
 
     def refresh_if_stale(self):
         if time.monotonic() - self._last_refresh > 2:
@@ -1066,6 +1115,9 @@ class App(Gtk.Application):
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
+        # Keep running in the top bar after the window is closed. Only here, in
+        # the first instance: a second launch hands over to it and must exit.
+        self.hold()
         Gtk.IconTheme.get_default().append_search_path(ICON_DIR)
         Gtk.Window.set_default_icon_name(ICON)
         css = Gtk.CssProvider()
@@ -1298,8 +1350,6 @@ def main():
     sys.excepthook = excepthook
     log(f"app started, pid {os.getpid()}")
     app = App()
-    # Keep running in the top bar after the window is closed.
-    app.hold()
 
     # Ctrl+C in a terminal, or the system ending the session, quits the way the
     # Quit button does: Hermes is stopped properly first.

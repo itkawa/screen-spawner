@@ -98,6 +98,16 @@ esac
 echo
 echo "=== Stopping Hermes ==="
 
+# The Screen Spawner app first: on SIGTERM it stops Hermes properly and quits.
+# Matched by its installed path only, as the command it runs under.
+APP_BIN="$HOME/.local/share/screen-spawner/app/screen-spawner"
+if pkill -TERM -u "$USER" -f "^python3 $APP_BIN( |$)" 2>/dev/null; then
+    for _ in $(seq 1 20); do
+        pgrep -u "$USER" -f "^python3 $APP_BIN( |$)" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
+fi
+
 # Anchored to the start of the command line, so it matches only the
 # Hermes binary itself, not shells or editors that mention its path.
 pkill -TERM -f '^([^ ]*/)?(build/)?sunshine(-[0-9][[:alnum:]_.+~-]*)?( |$)' 2>/dev/null || true
@@ -297,7 +307,10 @@ for entry in "${OTHER_ENTRIES[@]}"; do
         dir)
             echo "Removing directory: $value"
             case "$value" in
-                ""|"/"|"$HOME"|"$HOME/")
+                ""|"/"|"$HOME"|"$HOME/"|"$HOME/.config"|"$HOME/.config/"|\
+                "$HOME/.config/hermes"|"$HOME/.config/hermes/")
+                    # Hermes settings and paired devices always stay, even if
+                    # an early installer recorded their folder.
                     echo "  Refusing to remove this path, skipped."
                     keep "$type" "$value"
                     ;;
@@ -394,6 +407,8 @@ echo
 if [ ${#REMAINING[@]} -eq 0 ]; then
     rm -f "$MANIFEST"
     rm -rf "$BACKUP_DIR"
+    # The app's own journal (see app/screen-spawner, log())
+    rm -f "$STATE_DIR/app.log" "$STATE_DIR/app.log.old"
     rmdir "$STATE_DIR" 2>/dev/null || true
 
     echo "=== Uninstall completed ==="

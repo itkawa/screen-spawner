@@ -622,6 +622,7 @@ mkdir -p "$HOME/.local/share/applications"
 
 [ -e "$LAUNCHER" ] || record file "$LAUNCHER"
 
+# The Screen Spawner app reads the Hermes command from this launcher too.
 cat > "$LAUNCHER" <<EOF
 [Desktop Entry]
 Name=Hermes
@@ -634,6 +635,87 @@ Categories=Network;
 EOF
 
 chmod +x "$LAUNCHER"
+
+# ------------------------------------------------------------
+# 15a. Install the Screen Spawner app
+# ------------------------------------------------------------
+# A window and a top bar icon to start Hermes, pair devices, switch between
+# extended and mirrored, and see the load. It goes to the user's own folders,
+# with a launcher in the application menu.
+
+echo
+echo "=== Installing the Screen Spawner app ==="
+
+APP_DATA="$HOME/.local/share/screen-spawner"
+APP_LAUNCHER="$HOME/.local/share/applications/screen-spawner.desktop"
+ICON_ROOT="$HOME/.local/share/icons/hicolor"
+
+# Python with GTK 3 and the top bar icon library. Usually already there on a
+# GNOME desktop; apt_install records only what it adds.
+APP_PACKAGES=(python3-gi gir1.2-gtk-3.0)
+INDICATOR_PKG="$(first_available gir1.2-ayatanaappindicator3-0.1 || true)"
+[ -n "$INDICATOR_PKG" ] && APP_PACKAGES+=("$INDICATOR_PKG")
+# Ubuntu ships its own AppIndicator extension for GNOME Shell; plain GNOME,
+# as on Debian, needs one to show the top bar icon.
+if command -v gnome-shell >/dev/null 2>&1 &&
+   ! dpkg -s gnome-shell-extension-appindicator >/dev/null 2>&1 &&
+   ! dpkg -s gnome-shell-extension-ubuntu-appindicators >/dev/null 2>&1 &&
+   apt-cache show gnome-shell-extension-appindicator >/dev/null 2>&1; then
+    APP_PACKAGES+=(gnome-shell-extension-appindicator)
+fi
+MISSING_PACKAGES=()
+for pkg in "${APP_PACKAGES[@]}"; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || MISSING_PACKAGES+=("$pkg")
+done
+if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+    apt_install "${MISSING_PACKAGES[@]}"
+fi
+APPINDICATOR_NOTE=0
+if [[ " ${MISSING_PACKAGES[*]} " == *" gnome-shell-extension-appindicator "* ]]; then
+    # GNOME Shell sees a newly installed extension only after logging in again.
+    gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com 2>/dev/null || true
+    APPINDICATOR_NOTE=1
+fi
+
+# The app, its icons, and a copy of the uninstaller with the patch it needs,
+# for the app's Uninstall button.
+[ -e "$APP_DATA" ] || record dir "$APP_DATA"
+mkdir -p "$APP_DATA/app" "$APP_DATA/patches"
+cp -r "$SCRIPT_DIR/app/." "$APP_DATA/app/"
+rm -rf "$APP_DATA/app/__pycache__"
+chmod +x "$APP_DATA/app/screen-spawner"
+cp "$SCRIPT_DIR/uninstall.sh" "$APP_DATA/uninstall.sh"
+cp "$HERMES_PATCH" "$APP_DATA/patches/"
+# The README, with the pictures it links to, for reading after installation.
+mkdir -p "$APP_DATA/docs"
+cp "$SCRIPT_DIR/README.md" "$APP_DATA/README.md"
+cp "$SCRIPT_DIR"/docs/* "$APP_DATA/docs/"
+
+# Icons in the standard place, so the menu and the window find them by name.
+while IFS= read -r -d '' icon; do
+    dest="$ICON_ROOT/${icon#"$SCRIPT_DIR/app/icons/hicolor/"}"
+    [ -e "$dest" ] || record file "$dest"
+    mkdir -p "$(dirname "$dest")"
+    cp "$icon" "$dest"
+done < <(find "$SCRIPT_DIR/app/icons/hicolor" -type f -print0)
+
+[ -e "$APP_LAUNCHER" ] || record file "$APP_LAUNCHER"
+cat > "$APP_LAUNCHER" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Screen Spawner
+Comment=Use a tablet or phone as a second monitor
+Keywords=tablet;phone;monitor;display;second;screen;moonlight;hermes;
+Exec=$APP_DATA/app/screen-spawner
+Icon=screen-spawner
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+EOF
+chmod +x "$APP_LAUNCHER"
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+fi
 
 # ------------------------------------------------------------
 # 16. Final checks
@@ -679,19 +761,20 @@ next_step_heading() {
     fi
 }
 
-next_step_heading "Start Hermes:"
-echo "Open Hermes from the application menu."
-echo "Keep Hermes running while using your device. Press Ctrl+C in its terminal to stop it."
-
-next_step_heading "Web UI (settings and device pairing):"
-echo "With Hermes running, open this address in your browser:"
-echo "https://localhost:47990"
+next_step_heading "Start:"
+echo "Open Screen Spawner from the application menu and press Start."
+echo "Hermes runs while the app runs; Quit stops both."
+if [ "$APPINDICATOR_NOTE" = 1 ]; then
+    echo "For the app's icon in the top bar, log out and in again once, and turn on"
+    echo "the AppIndicator extension in the Extensions app if it is off."
+fi
 
 next_step_heading "To connect a device:"
-echo "Open Moonlight on your tablet or phone, add this computer and pair using the PIN in the Hermes Web UI."
-echo "Setup, device permissions and virtual display settings:"
-echo "https://github.com/itkawa/screen-spawner#pair-the-tablet-once"
-echo "Then choose Desktop in Moonlight."
+echo "Open Moonlight on your tablet or phone, add this computer and tap it for a PIN."
+echo "In Screen Spawner press Pair a device and enter the PIN. Then choose Desktop in Moonlight."
+echo "How to use the app:"
+echo "https://github.com/itkawa/screen-spawner#usage"
+echo "or $APP_DATA/README.md"
 
 next_step_heading "To uninstall:"
 printf 'bash %q\n' "$SCRIPT_DIR/uninstall.sh"
