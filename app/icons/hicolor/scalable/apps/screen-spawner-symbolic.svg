@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- A monitor with a plus: a screen being added, as on the app icon. -->
+  <path fill="#bebebe" d="M2.5 1A1.5 1.5 0 0 0 1 2.5v8A1.5 1.5 0 0 0 2.5 12H7v1.5H4.5a.75.75 0 0 0 0 1.5h7a.75.75 0 0 0 0-1.5H9V12h4.5a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 13.5 1zm0 1.5h11v8h-11z"/>
+  <path fill="#bebebe" d="M7.25 3.75h1.5V5.75h2v1.5h-2v2h-1.5v-2h-2v-1.5h2z"/>
+</svg>

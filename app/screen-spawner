@@ -1,0 +1,1156 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Screen Spawner: a small window and top bar icon to run Hermes for a tablet.
+
+It starts and stops Hermes, pairs a tablet or phone by the PIN Moonlight shows
+and gives it the permissions it needs, switches the Desktop app between an
+extended and a mirrored display, removes paired devices, opens the Hermes Web
+UI and starts the uninstaller.
+
+It talks to Hermes through its local API with the token Hermes publishes in
+$XDG_RUNTIME_DIR/hermes/local-api.token, so no Web UI password is needed.
+"""
+
+import configparser
+import json
+import os
+import shlex
+import shutil
+import signal
+import ssl
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+
+try:
+    gi.require_version("AyatanaAppIndicator3", "0.1")
+    from gi.repository import AyatanaAppIndicator3 as AppIndicator  # noqa: E402
+except (ValueError, ImportError):
+    AppIndicator = None
+
+APP_ID = "io.github.itkawa.ScreenSpawner"
+WEB_UI = "https://localhost:47990"
+LAUNCHER = os.path.expanduser("~/.local/share/applications/hermes.desktop")
+DATA_DIR = os.path.expanduser("~/.local/share/screen-spawner")
+UNINSTALLER = os.path.join(DATA_DIR, "uninstall.sh")
+DESKTOP_APP = "Desktop"
+ICON = "screen-spawner"
+PANEL_ICON = "screen-spawner-symbolic"
+# Icons ship next to the program: app/icons in the source tree, and the same
+# layout under ~/.local/share/screen-spawner once installed.
+ICON_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "icons")
+
+STATE_DIR = os.path.expanduser("~/.local/state/screen-spawner")
+LOG_FILE = os.path.join(STATE_DIR, "app.log")
+
+
+def log(message):
+    """A short journal of what the app did, for finding rare glitches later."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 512 * 1024:
+            os.replace(LOG_FILE, LOG_FILE + ".old")
+        with open(LOG_FILE, "a") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + message + "\n")
+    except OSError:
+        pass
+
+
+# Hermes permission bits (src/crypto.h). A new client only gets view and list,
+# and Moonlight then disconnects as soon as it starts the desktop.
+PERM_INPUTS = 0x1F << 8          # controller, touch, pen, mouse, keyboard
+PERM_ACTIONS = 0x7 << 24         # list, view, launch
+DEVICE_PERMISSIONS = PERM_INPUTS | PERM_ACTIONS
+
+
+def _die_with_parent():
+    """In the Hermes child: get SIGTERM if Screen Spawner itself ends, even by a
+    crash, so Hermes never keeps running without the app that controls it."""
+    import ctypes
+    PR_SET_PDEATHSIG = 1
+    ctypes.CDLL("libc.so.6", use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+
+
+class HermesError(Exception):
+    pass
+
+
+class HermesNotRunning(HermesError):
+    pass
+
+
+class HermesNeedsSetup(HermesError):
+    """Hermes has no Web UI account yet, and the API answers with a redirect."""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+class Hermes:
+    """The Hermes process and its local API."""
+
+    def __init__(self):
+        # Hermes uses a self-signed certificate; this only ever talks to localhost.
+        self._ssl = ssl.create_default_context()
+        self._ssl.check_hostname = False
+        self._ssl.verify_mode = ssl.CERT_NONE
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=self._ssl), _NoRedirect)
+        self._process = None
+        self._pid = None
+
+    # ---------- process ----------
+
+    @staticmethod
+    def command():
+        """The command and working directory from the Hermes launcher that install.sh writes."""
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.optionxform = str
+        if not parser.read(LAUNCHER):
+            raise HermesError(f"The Hermes launcher was not found: {LAUNCHER}")
+        entry = parser["Desktop Entry"]
+        command = shlex.split(entry.get("Exec", ""))
+        if not command:
+            raise HermesError(f"The Hermes launcher has no Exec line: {LAUNCHER}")
+        return command, entry.get("Path") or None
+
+    @staticmethod
+    def token_path():
+        runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        return os.path.join(runtime, "hermes", "local-api.token")
+
+    def pid(self):
+        """The running Hermes process, if any."""
+        # Collect a Hermes this app started and that has exited, so it does not
+        # linger as a zombie.
+        if self._process and self._process.poll() is not None:
+            self._process = None
+        try:
+            command, _ = self.command()
+        except HermesError:
+            return None
+        binary = os.path.realpath(command[0])
+        # The process found last time is usually still the one: check it alone
+        # before walking every process on the system.
+        cached = getattr(self, "_pid", None)
+        if cached:
+            try:
+                if os.path.realpath(f"/proc/{cached}/exe") == binary:
+                    return cached
+            except OSError:
+                pass
+            self._pid = None
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                if os.path.realpath(f"/proc/{entry}/exe") == binary and \
+                        os.stat(f"/proc/{entry}").st_uid == os.getuid():
+                    self._pid = int(entry)
+                    return self._pid
+            except OSError:
+                continue
+        return None
+
+    def start(self):
+        if self.pid():
+            return
+        command, workdir = self.command()
+        # Screen Spawner has its own top bar icon; a second one from Hermes
+        # (which a source build shows as a generic icon) would only confuse.
+        # A command-line option overrides the config file without changing it.
+        command = [*command, "system_tray=false"]
+        self._process = subprocess.Popen(
+            command, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=_die_with_parent)
+
+    def stop(self):
+        """Ask Hermes to quit and wait for it. Blocking: call it off the GTK thread."""
+        try:
+            self.post("/api/quit", {})
+        except HermesError:
+            pid = self.pid()
+            if pid:
+                os.kill(pid, signal.SIGTERM)
+        for _ in range(100):
+            if self._process:
+                self._process.poll()
+            if not self.pid():
+                break
+            time.sleep(0.1)
+        self._process = None
+
+    def app_running(self):
+        """Whether the Desktop app runs: a device is connected, or its session is paused."""
+        sessions = (self.get("/api/metrics").get("sessions") or {})
+        return int(sessions.get("active") or 0) > 0 or bool(sessions.get("awaiting_reconnect"))
+
+    # ---------- API ----------
+
+    def _request(self, method, path, body=None):
+        try:
+            with open(self.token_path()) as f:
+                token = f.read().strip()
+        except OSError:
+            raise HermesNotRunning("Hermes is not running.")
+        data = None if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(WEB_UI + path, data=data, method=method, headers={
+            "Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        try:
+            with self._opener.open(request, timeout=5) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as e:
+            if 300 <= e.code < 400 and "welcome" in (e.headers.get("Location") or ""):
+                raise HermesNeedsSetup("Hermes needs a Web UI account first.")
+            if e.code == 401:
+                raise HermesNotRunning("Hermes did not accept the local token; it may be restarting.")
+            raise HermesError(f"Hermes answered {e.code} to {path}.")
+        except (urllib.error.URLError, OSError) as e:
+            raise HermesNotRunning(f"Hermes does not answer: {e}")
+
+    def get(self, path):
+        return self._request("GET", path)
+
+    def post(self, path, body):
+        return self._request("POST", path, body)
+
+    def clients(self):
+        return self.get("/api/clients/list").get("named_certs", [])
+
+    def pair(self, pin, name):
+        """Hand Hermes the PIN. Returns the uuids known before, to find the new device:
+        Hermes adds it only when Moonlight finishes pairing, a few seconds later."""
+        before = {c.get("uuid") for c in self.clients()}
+        if not self.post("/api/pin", {"pin": pin, "name": name}).get("status"):
+            raise HermesError("Hermes did not accept the PIN. Tap the computer in Moonlight "
+                              "first, then enter the PIN it shows.")
+        return before
+
+    def grant_new(self, before):
+        """Give the devices paired since `before` the permissions they need.
+        Returns their names, or an empty list if none has appeared yet."""
+        granted = []
+        for client in self.clients():
+            if client.get("uuid") not in before:
+                if int(client.get("perm", 0)) & DEVICE_PERMISSIONS != DEVICE_PERMISSIONS:
+                    self.set_permissions(client)
+                granted.append(client.get("name") or "The device")
+        return granted
+
+    def set_permissions(self, client):
+        update = dict(client)
+        update["perm"] = int(client.get("perm", 0)) | DEVICE_PERMISSIONS
+        if not self.post("/api/clients/update", update).get("status"):
+            raise HermesError(f"Hermes did not update the permissions of {client.get('name')}.")
+
+    def unpair(self, uuid):
+        if not self.post("/api/clients/unpair", {"uuid": uuid}).get("status"):
+            raise HermesError("Hermes did not remove the device.")
+
+    def desktop_app(self):
+        for app in self.get("/api/apps").get("apps", []):
+            if app.get("name") == DESKTOP_APP:
+                return app
+        raise HermesError(f'Hermes has no "{DESKTOP_APP}" app.')
+
+    def layout(self):
+        app = self.desktop_app()
+        if not app.get("virtual-display"):
+            return None
+        return "mirror" if app.get("virtual-display-layout") == "mirror" else "extend"
+
+    def set_layout(self, layout):
+        app = self.desktop_app()
+        app["virtual-display"] = True
+        app["virtual-display-layout"] = layout
+        if not self.post("/api/apps", app).get("status"):
+            raise HermesError("Hermes did not save the display mode.")
+
+
+class Mutter:
+    """Switch a connected tablet between extended and mirrored at once, the way GNOME
+    Settings does, through org.gnome.Mutter.DisplayConfig (X11 and Wayland)."""
+
+    NAME = "org.gnome.Mutter.DisplayConfig"
+    PATH = "/org/gnome/Mutter/DisplayConfig"
+
+    def __init__(self):
+        self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+    def _call(self, method, args=None):
+        return self.bus.call_sync(self.NAME, self.PATH, self.NAME, method, args, None,
+                                  Gio.DBusCallFlags.NONE, 5000, None).unpack()
+
+    @staticmethod
+    def evdi_connectors():
+        """DRM connector names of EVDI outputs, e.g. DVI-I-1."""
+        names = []
+        base = "/sys/class/drm"
+        for card in os.listdir(base):
+            if not card.startswith("card") or "-" in card:
+                continue
+            module = os.path.realpath(os.path.join(base, card, "device/driver/module"))
+            if os.path.basename(module) != "evdi":
+                continue
+            for entry in os.listdir(base):
+                if entry.startswith(card + "-"):
+                    names.append(entry[len(card) + 1:])
+        return names
+
+    def tablet(self, monitors):
+        """The monitor of the virtual display. X11 names an output of a second GPU
+        with a suffix, so DVI-I-1 appears as DVI-I-1-1."""
+        connectors = self.evdi_connectors()
+        for spec, modes, props in monitors:
+            name = spec[0]
+            if any(name == c or name.startswith(c + "-") for c in connectors):
+                return spec, modes
+        return None, None
+
+    @staticmethod
+    def current_mode(modes):
+        for mode in modes:
+            if mode[6].get("is-current"):
+                return mode
+        return None
+
+    def connected(self):
+        try:
+            _, monitors, _, _ = self._call("GetCurrentState")
+        except GLib.Error:
+            return False
+        return self.tablet(monitors)[0] is not None
+
+    def current_layout(self):
+        """'mirror' or 'extend' as GNOME has the tablet now, or None if it is not connected."""
+        _, monitors, logical, _ = self._call("GetCurrentState")
+        spec, _ = self.tablet(monitors)
+        if spec is None:
+            return None
+        for *_, specs, _props in logical:
+            if any(s[0] == spec[0] for s in specs):
+                return "mirror" if len(specs) > 1 else "extend"
+        return None
+
+    def apply(self, layout):
+        """Switch the connected tablet, check that GNOME did, and try once more if not.
+        Returns False if no tablet is connected."""
+        current = self.current_layout()
+        if current is None:
+            return False
+        if current == layout:
+            return True
+        for attempt in (1, 2):
+            try:
+                if not self._apply_once(layout):
+                    return False
+            except GLib.Error as e:
+                # A stale serial is refused when the monitors changed in between.
+                log(f"apply {layout}, attempt {attempt}: GNOME refused: {e.message}")
+                if attempt == 2:
+                    raise
+                time.sleep(0.3)
+                continue
+            for _ in range(10):
+                if self.current_layout() == layout:
+                    log(f"apply {layout}, attempt {attempt}: done")
+                    return True
+                time.sleep(0.15)
+            log(f"apply {layout}, attempt {attempt}: GNOME still shows {self.current_layout()}")
+        raise HermesError(f"GNOME did not switch the tablet to {layout}. Try again.")
+
+    def _apply_once(self, layout):
+        serial, monitors, logical, props = self._call("GetCurrentState")
+        spec, modes = self.tablet(monitors)
+        if spec is None:
+            return False
+        by_connector = {m[0][0]: m for m in monitors}
+        scale_logical = props.get("layout-mode") == 1   # 1: logical, 2: physical
+
+        result = []
+        primary_index = None
+        for x, y, scale, transform, primary, specs, _ in logical:
+            members = [s for s in specs if s[0] != spec[0]]
+            if not members:
+                continue
+            entries = []
+            for s in members:
+                mode = self.current_mode(by_connector[s[0]][1])
+                if mode is None:
+                    raise HermesError(f"GNOME reports no mode for {s[0]}.")
+                entries.append((s[0], mode[0], {}))
+            if primary:
+                primary_index = len(result)
+            result.append([x, y, scale, transform, primary, entries])
+        if primary_index is None:
+            raise HermesError("GNOME reports no primary monitor.")
+
+        if layout == "mirror":
+            first = result[primary_index][5][0]
+            primary_mode = next(m for m in by_connector[first[0]][1] if m[0] == first[1])
+            same = [m for m in modes if m[1] == primary_mode[1] and m[2] == primary_mode[2]]
+            if not same:
+                raise HermesError(
+                    f"The tablet has no {primary_mode[1]}×{primary_mode[2]} mode to mirror the main "
+                    "screen. Reconnect it in Moonlight once so Hermes offers that mode.")
+            result[primary_index][5].append((spec[0], same[0][0], {}))
+        else:
+            # The preferred mode is the one Moonlight asked for; while mirrored the
+            # tablet runs at the main screen's size instead.
+            mode = next((m for m in modes if m[6].get("is-preferred")), None) \
+                or self.current_mode(modes) or modes[0]
+            right = 0
+            for x, y, scale, transform, primary, entries in result:
+                m = next(m for m in by_connector[entries[0][0]][1] if m[0] == entries[0][1])
+                width = m[1] / scale if scale_logical else m[1]
+                right = max(right, x + int(round(width)))
+            result.append([right, 0, 1.0, 0, False, [(spec[0], mode[0], {})]])
+
+        config = [(int(x), int(y), float(s), int(t), bool(p), entries)
+                  for x, y, s, t, p, entries in result]
+        # Method 1: temporary, like a session's own change; GNOME does not ask to keep it.
+        self._call("ApplyMonitorsConfig", GLib.Variant(
+            "(uua(iiduba(ssa{sv}))a{sv})", (serial, 1, config, {})))
+        return True
+
+
+def open_terminal(script):
+    """Run a script in a terminal window, so it can ask for the sudo password."""
+    command = f"bash {shlex.quote(script)}; echo; read -r -p 'Press Enter to close this window. '"
+    for terminal, args in (("ptyxis", ["--"]), ("kgx", ["--"]), ("gnome-terminal", ["--"]),
+                           ("x-terminal-emulator", ["-e"]), ("xterm", ["-e"])):
+        if shutil.which(terminal):
+            subprocess.Popen([terminal, *args, "bash", "-c", command], start_new_session=True)
+            return
+    raise HermesError("No terminal was found to run the uninstaller.")
+
+
+class PairDialog(Gtk.Dialog):
+    def __init__(self, parent):
+        super().__init__(title="Pair a device", transient_for=parent, modal=True)
+        self.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Pair", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+        box = self.get_content_area()
+        box.set_spacing(10)
+        box.set_border_width(16)
+        hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=44, label=(
+            "In Moonlight on the tablet or phone, tap this computer. "
+            "Moonlight shows a 4-digit PIN; enter it here."))
+        box.add(hint)
+        grid = Gtk.Grid(column_spacing=12, row_spacing=8)
+        self.pin = Gtk.Entry(max_length=4, activates_default=True, input_purpose=Gtk.InputPurpose.DIGITS)
+        self.name = Gtk.Entry(text="Tablet", activates_default=True)
+        grid.attach(Gtk.Label(label="PIN", xalign=0), 0, 0, 1, 1)
+        grid.attach(self.pin, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Device name", xalign=0), 0, 1, 1, 1)
+        grid.attach(self.name, 1, 1, 1, 1)
+        box.add(grid)
+        self.show_all()
+
+
+class ActivityPage(Gtk.Box):
+    """Live stream statistics from /api/metrics and the tail of the Hermes log."""
+
+    LOG = os.path.expanduser("~/.config/hermes/hermes.log")
+    MAX_LINES = 3000
+
+    def __init__(self, hermes):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12, border_width=18)
+        self.hermes = hermes
+        grid = Gtk.Grid(column_spacing=18, row_spacing=6)
+        self.values = {}
+        rows = (("encoder", "Encoder"), ("stream", "Stream"), ("size", "Resolution"),
+                ("fps", "Frame rate"), ("bitrate", "Bitrate"), ("encode", "Encode time"),
+                ("dropped", "Dropped frames"))
+        for i, (key, title) in enumerate(rows):
+            name = Gtk.Label(label=title, xalign=0)
+            name.get_style_context().add_class("dim-label")
+            value = Gtk.Label(label="—", xalign=0, selectable=True)
+            grid.attach(name, 0 if i < 4 else 2, i % 4, 1, 1)
+            grid.attach(value, 1 if i < 4 else 3, i % 4, 1, 1)
+            self.values[key] = value
+        self.add(grid)
+
+        self.buffer = Gtk.TextBuffer()
+        view = Gtk.TextView(buffer=self.buffer, editable=False, cursor_visible=False,
+                            monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        self.scroll = Gtk.ScrolledWindow(vexpand=True, min_content_height=260)
+        self.scroll.add(view)
+        self.pack_start(self.scroll, True, True, 0)
+        self._offset = 0
+        self._inode = None
+        self._timer = None
+
+    # Nothing runs and nothing is kept while the page is not shown: it starts
+    # when the page is opened and is emptied when it is left.
+    TAIL = 64 * 1024
+
+    def start(self):
+        if self._timer:
+            return
+        self._inode = None
+        self.refresh()
+        self._timer = GLib.timeout_add_seconds(1, self._on_timer)
+
+    def stop(self):
+        if self._timer:
+            GLib.source_remove(self._timer)
+            self._timer = None
+        self.buffer.set_text("")
+        self._inode, self._offset = None, 0
+        for value in self.values.values():
+            value.set_text("—")
+
+    def _on_timer(self):
+        self.refresh()
+        return True
+
+    def refresh(self):
+        self.refresh_metrics()
+        self.refresh_log()
+
+    def refresh_metrics(self):
+        try:
+            data = self.hermes.get("/api/metrics")
+        except HermesError:
+            for value in self.values.values():
+                value.set_text("—")
+            return
+        enc = data.get("encoder") or {}
+        if enc.get("name"):
+            kind = "hardware" if enc.get("hardware") else "software (CPU)"
+            self.values["encoder"].set_text(f"{enc['name']}, {kind}")
+        else:
+            self.values["encoder"].set_text("not chosen yet")
+        sessions = data.get("sessions") or {}
+        active = int(sessions.get("active") or 0)
+        self.values["stream"].set_text(
+            f"{active} device{'s' if active != 1 else ''} connected" if active else "no device connected")
+        p = data.get("pipeline") or {}
+        if p and active:
+            self.values["size"].set_text(f"{p.get('width', 0)}×{p.get('height', 0)}")
+            self.values["fps"].set_text(f"{p.get('fps', 0):.0f} fps")
+            self.values["bitrate"].set_text(f"{p.get('bitrate_kbps', 0) / 1000:.1f} Mbit/s")
+            self.values["encode"].set_text(f"{p.get('encode_ms', 0):.1f} ms")
+            self.values["dropped"].set_text(
+                f"{p.get('frames_dropped', 0)} of {p.get('frames_encoded', 0)}")
+        else:
+            for key in ("size", "fps", "bitrate", "encode", "dropped"):
+                self.values[key].set_text("—")
+
+    def refresh_log(self):
+        try:
+            stat = os.stat(self.LOG)
+        except OSError:
+            return
+        # On opening the page, and when Hermes starts a new log, show only its end.
+        if stat.st_ino != self._inode or stat.st_size < self._offset:
+            self._inode, self._offset = stat.st_ino, max(0, stat.st_size - self.TAIL)
+            self.buffer.set_text("")
+        if stat.st_size == self._offset:
+            return
+        with open(self.LOG, errors="replace") as f:
+            f.seek(self._offset)
+            text = f.read()
+            self._offset = f.tell()
+        adj = self.scroll.get_vadjustment()
+        at_bottom = adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
+        self.buffer.insert(self.buffer.get_end_iter(), text)
+        extra = self.buffer.get_line_count() - self.MAX_LINES
+        if extra > 0:
+            self.buffer.delete(self.buffer.get_start_iter(), self.buffer.get_iter_at_line(extra))
+        if at_bottom:
+            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+
+class Window(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Screen Spawner")
+        self._shown_devices = None
+        self._busy = False
+        self._api_ok = False
+        self.app = app
+        self.hermes = app.hermes
+        self.set_default_size(460, -1)
+        self.set_icon_name(ICON)
+        self.connect("delete-event", self.on_close)
+
+        # Two pages, switched in the title bar: the controls, and what Hermes is
+        # doing right now (stream statistics and its log).
+        stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
+        switcher = Gtk.StackSwitcher(stack=stack)
+        header = Gtk.HeaderBar(show_close_button=True, custom_title=switcher)
+        self.set_titlebar(header)
+        self.add(stack)
+        self.stack = stack
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, border_width=18)
+        stack.add_titled(outer, "control", "Screen Spawner")
+        self.activity = ActivityPage(self.hermes)
+        stack.add_titled(self.activity, "activity", "Activity")
+
+        # Hermes
+        row = Gtk.Box(spacing=12)
+        self.status = Gtk.Label(xalign=0, hexpand=True)
+        self.start_stop = Gtk.Button()
+        self.start_stop.connect("clicked", self.on_start_stop)
+        row.pack_start(self.status, True, True, 0)
+        row.pack_end(self.start_stop, False, False, 0)
+        outer.add(self.section("Hermes", row))
+
+        # Display mode
+        modes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.extend = Gtk.RadioButton.new_with_label(None, "Extended: the tablet is a separate screen")
+        self.mirror = Gtk.RadioButton.new_with_label_from_widget(self.extend, "Mirrored: the tablet shows the main screen")
+        self.extend.connect("toggled", self.on_mode)
+        self.mode_hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=50,
+                                   label="Switches a connected tablet at once.")
+        self.mode_hint.get_style_context().add_class("dim-label")
+        for w in (self.extend, self.mirror, self.mode_hint):
+            modes.add(w)
+        outer.add(self.section("Display", modes))
+
+        # Devices
+        devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.device_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.device_list.get_style_context().add_class("frame")
+        self.pair_button = Gtk.Button(label="Pair a device…", halign=Gtk.Align.START)
+        self.pair_button.connect("clicked", self.on_pair)
+        devices.add(self.device_list)
+        devices.add(self.pair_button)
+        outer.add(self.section("Devices", devices))
+
+        # Bottom buttons
+        bottom = Gtk.Box(spacing=12)
+        settings = Gtk.Button(label="Hermes settings")
+        settings.set_tooltip_text(WEB_UI)
+        settings.connect("clicked", lambda *_: self.app.open_settings())
+        uninstall = Gtk.Button(label="Uninstall Screen Spawner…")
+        uninstall.get_style_context().add_class("destructive-action")
+        uninstall.connect("clicked", self.on_uninstall)
+        quit_button = Gtk.Button(label="Quit")
+        quit_button.set_tooltip_text("Stop Hermes and close Screen Spawner.")
+        quit_button.connect("clicked", lambda *_: self.app.quit_all())
+        bottom.pack_start(settings, False, False, 0)
+        bottom.pack_start(quit_button, False, False, 0)
+        bottom.pack_end(uninstall, False, False, 0)
+        outer.add(bottom)
+
+        self._updating = False
+        self._last_layout = None
+        self.refresh()
+        # No polling: the window asks Hermes when it is opened or focused and
+        # after each action; Hermes exiting and the tablet disconnecting arrive
+        # as events (see App.watch_hermes and App.on_monitors_changed).
+        self._last_refresh = 0.0
+        self.connect("focus-in-event", lambda *_: self.refresh_if_stale())
+        # Statistics and log only while that page is open and the window is shown.
+        self.stack.connect("notify::visible-child-name", lambda *_: self.update_activity())
+        self.connect("show", lambda *_: self.update_activity())
+        self.connect("hide", lambda *_: self.update_activity())
+
+    def update_activity(self):
+        if self.get_visible() and self.stack.get_visible_child_name() == "activity":
+            self.activity.start()
+        else:
+            self.activity.stop()
+
+    def refresh_if_stale(self):
+        if time.monotonic() - self._last_refresh > 2:
+            self.refresh()
+        return False
+
+    def refresh_until_ready(self, seconds=20):
+        """After Start: Hermes needs a few seconds before its API answers."""
+        deadline = time.monotonic() + seconds
+
+        def step():
+            self.refresh()
+            return self._api_ok is False and time.monotonic() < deadline
+
+        GLib.timeout_add(700, step)
+
+    @staticmethod
+    def section(title, child):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        label = Gtk.Label(xalign=0)
+        label.set_markup(f"<b>{GLib.markup_escape_text(title)}</b>")
+        box.add(label)
+        box.add(child)
+        return box
+
+    def message(self, text, kind=Gtk.MessageType.ERROR):
+        dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=kind,
+                                   buttons=Gtk.ButtonsType.OK, text=text)
+        dialog.run()
+        dialog.destroy()
+
+    def refresh(self):
+        self._last_refresh = time.monotonic()
+        self._updating = True
+        running = self.hermes.pid() is not None
+        api_ok = False
+        try:
+            if running:
+                self.app.save_pending_layout()
+            layout = self.app.effective_layout() if running else None
+            clients = self.hermes.clients() if running else []
+            api_ok = running
+            self.status.set_text("Hermes is running." if running else "Hermes is stopped.")
+        except HermesNeedsSetup:
+            layout, clients = None, []
+            self.status.set_text("Hermes needs a Web UI account. Open Hermes settings to create one.")
+        except HermesError:
+            layout, clients = None, []
+            self.status.set_text("Hermes is starting…" if running else "Hermes is stopped.")
+        if not self._busy:
+            self.set_start_stop(running)
+        # Pairing and the display mode go through Hermes, so they wait for it.
+        for w in (self.extend, self.mirror, self.pair_button):
+            w.set_sensitive(api_ok)
+        self.pair_button.set_tooltip_text(None if api_ok else "Start Hermes first.")
+        # While a switch runs in the background, keep showing what was chosen.
+        if not self.app._switching:
+            if layout == "mirror":
+                self.mirror.set_active(True)
+            elif layout == "extend":
+                self.extend.set_active(True)
+        self.fill_devices(clients, api_ok)
+        self._api_ok = api_ok
+        self._last_layout = layout
+        self.app.update_indicator(running, layout)
+        self._updating = False
+        return True
+
+    def fill_devices(self, clients, api_ok):
+        names = [(c.get("uuid"), c.get("name")) for c in clients]
+        if self._shown_devices == (names, api_ok):
+            return
+        self._shown_devices = (names, api_ok)
+        for child in self.device_list.get_children():
+            self.device_list.remove(child)
+        if not clients:
+            text = "No paired devices." if api_ok else "Start Hermes to see paired devices."
+            label = Gtk.Label(label=text, xalign=0, margin=10)
+            label.get_style_context().add_class("dim-label")
+            self.device_list.add(label)
+        for client in clients:
+            row = Gtk.Box(spacing=12, margin=6)
+            row.pack_start(Gtk.Label(label=client.get("name") or "Unnamed device", xalign=0), True, True, 4)
+            remove = Gtk.Button(label="Remove")
+            remove.connect("clicked", self.on_remove, client)
+            row.pack_end(remove, False, False, 0)
+            self.device_list.add(row)
+        self.device_list.show_all()
+
+    def set_start_stop(self, running, busy=None):
+        style = self.start_stop.get_style_context()
+        for name in ("start", "stop"):
+            style.remove_class(name)
+        if busy:
+            self.start_stop.set_label(busy)
+            self.start_stop.set_sensitive(False)
+            return
+        self.start_stop.set_sensitive(True)
+        self.start_stop.set_label("Stop" if running else "Start")
+        style.add_class("stop" if running else "start")
+
+    def on_start_stop(self, *_):
+        if self._busy:
+            return
+        if not self.hermes.pid():
+            try:
+                self.hermes.start()
+                self.app.watch_hermes()
+            except (HermesError, OSError) as e:
+                self.message(str(e))
+            self.refresh_until_ready()
+            return
+        # Hermes takes a moment to remove the virtual display and exit; wait for
+        # it in a thread so the window keeps responding.
+        self._busy = True
+        self.set_start_stop(True, busy="Stopping…")
+
+        def work():
+            try:
+                self.hermes.stop()
+            except (HermesError, OSError):
+                pass
+            GLib.idle_add(done)
+
+        def done():
+            self._busy = False
+            self.refresh()
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_mode(self, button):
+        if self._updating:
+            return
+        layout = "extend" if self.extend.get_active() else "mirror"
+        if not self.app.set_layout(layout):
+            self.refresh()
+
+    def on_pair(self, *_):
+        dialog = PairDialog(self)
+        while dialog.run() == Gtk.ResponseType.OK:
+            pin = dialog.pin.get_text().strip()
+            name = dialog.name.get_text().strip() or "Tablet"
+            if not (pin.isdigit() and len(pin) == 4):
+                self.message("The PIN is the 4 digits Moonlight shows.")
+                continue
+            try:
+                before = self.hermes.pair(pin, name)
+            except HermesError as e:
+                self.message(str(e))
+                continue
+            dialog.destroy()
+            self.wait_for_device(before, name)
+            return
+        dialog.destroy()
+
+    def wait_for_device(self, before, name):
+        """Moonlight finishes pairing after the PIN; then the new device gets its
+        permissions, without which Moonlight is refused (403) when it starts Desktop."""
+        waiting = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.CANCEL, text=f"Pairing {name}…",
+            secondary_text="Waiting for Moonlight to finish pairing.")
+        state = {"tries": 0, "done": False}
+
+        def finish(text, kind):
+            state["done"] = True
+            waiting.destroy()
+            self._shown_devices = None
+            self.refresh()
+            if text:
+                self.message(text, kind)
+
+        def poll():
+            if state["done"]:
+                return False
+            state["tries"] += 1
+            try:
+                granted = self.hermes.grant_new(before)
+            except HermesError as e:
+                finish(str(e), Gtk.MessageType.ERROR)
+                return False
+            if granted:
+                finish(f"{', '.join(granted)} is paired. In Moonlight, tap the computer, "
+                       "then Desktop.", Gtk.MessageType.INFO)
+                return False
+            if state["tries"] >= 60:
+                finish("Moonlight did not finish pairing within a minute. "
+                       "Try pairing again.", Gtk.MessageType.ERROR)
+                return False
+            return True
+
+        waiting.connect("response", lambda *_: finish(None, None))
+        GLib.timeout_add(500, poll)
+        waiting.show()
+
+    def on_remove(self, _button, client):
+        name = client.get("name") or "this device"
+        dialog = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE, text=f"Remove {name}?",
+            secondary_text="It will need a new PIN to connect again.")
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Remove", Gtk.ResponseType.OK)
+        if dialog.run() == Gtk.ResponseType.OK:
+            try:
+                self.hermes.unpair(client.get("uuid", ""))
+            except HermesError as e:
+                self.message(str(e))
+        dialog.destroy()
+        self._shown_devices = None
+        self.refresh()
+
+    def on_uninstall(self, *_):
+        if not os.path.exists(UNINSTALLER):
+            self.message(f"The uninstaller was not found: {UNINSTALLER}\n"
+                         "Run uninstall.sh from the Screen Spawner folder instead.")
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE, text="Uninstall Screen Spawner?",
+            secondary_text=("A terminal opens with the uninstaller. It lists what it will "
+                            "remove and asks before removing anything."))
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Continue", Gtk.ResponseType.OK)
+        answer = dialog.run()
+        dialog.destroy()
+        if answer != Gtk.ResponseType.OK:
+            return
+        try:
+            if self.hermes.pid():
+                self.hermes.stop()
+            open_terminal(UNINSTALLER)
+        except (HermesError, OSError) as e:
+            self.message(str(e))
+            return
+        self.app.quit()
+
+    def on_close(self, *_):
+        if self.app.indicator:
+            self.hide()
+            return True
+        return False
+
+
+class App(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.hermes = Hermes()
+        self.pending_layout = None
+        self._switching = False
+        try:
+            self.mutter = Mutter()
+        except GLib.Error:
+            self.mutter = None
+        if self.mutter:
+            self.mutter.bus.signal_subscribe(
+                Mutter.NAME, Mutter.NAME, "MonitorsChanged", Mutter.PATH, None,
+                Gio.DBusSignalFlags.NONE, lambda *_: self.on_monitors_changed())
+        self.window = None
+        self.indicator = None
+        self._indicator_items = {}
+        self._indicator_updating = False
+
+    def do_startup(self):
+        Gtk.Application.do_startup(self)
+        Gtk.IconTheme.get_default().append_search_path(ICON_DIR)
+        Gtk.Window.set_default_icon_name(ICON)
+        css = Gtk.CssProvider()
+        css.load_from_data(b"""
+            button.start { background: #26a269; color: #ffffff; border-color: #1f8656; }
+            button.start:hover { background: #2ec27e; }
+            button.stop { background: #c01c28; color: #ffffff; border-color: #a51d2d; }
+            button.stop:hover { background: #e01b24; }
+        """)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def do_activate(self):
+        if not self.window:
+            self.window = Window(self)
+            self.build_indicator()
+        self.window.show_all()
+        self.window.present()
+
+    def build_indicator(self):
+        if AppIndicator is None:
+            return
+        self.indicator = AppIndicator.Indicator.new_with_path(
+            "screen-spawner", PANEL_ICON, AppIndicator.IndicatorCategory.APPLICATION_STATUS,
+            os.path.join(ICON_DIR, "hicolor", "scalable", "apps"))
+        self.indicator.set_title("Screen Spawner")
+        self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+        menu = Gtk.Menu()
+
+        def item(label, callback):
+            entry = Gtk.MenuItem(label=label)
+            entry.connect("activate", callback)
+            menu.append(entry)
+            return entry
+
+        item("Open Screen Spawner", lambda *_: self.do_activate())
+        self._indicator_items["start_stop"] = item("Start Hermes", lambda *_: self.window.on_start_stop())
+        menu.append(Gtk.SeparatorMenuItem())
+        extend = Gtk.RadioMenuItem(label="Extended")
+        mirror = Gtk.RadioMenuItem(label="Mirrored", group=extend)
+        extend.connect("toggled", lambda w: self._indicator_mode("extend" if w.get_active() else "mirror"))
+        menu.append(extend)
+        menu.append(mirror)
+        self._indicator_items["extend"], self._indicator_items["mirror"] = extend, mirror
+        menu.append(Gtk.SeparatorMenuItem())
+        item("Hermes settings", lambda *_: self.open_settings())
+        item("Quit", lambda *_: self.quit_all())
+        menu.show_all()
+        self.indicator.set_menu(menu)
+
+    def watch_hermes(self):
+        """Hear from the system when the Hermes this app started exits."""
+        process = self.hermes._process
+        if not process:
+            return
+
+        def exited(pid, status):
+            if self.hermes._process is process:
+                self.hermes._process = None
+            self.hermes._pid = None
+            self.update_indicator(False, None)
+            if self.window and self.window.get_visible() and not self.window._busy:
+                self.window.refresh()
+
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, process.pid, exited)
+
+    def on_monitors_changed(self):
+        """A monitor came or went. If the tablet left with a mode switched live,
+        Hermes can now save it without cutting a stream."""
+        if self.pending_layout and not self.mutter.connected():
+            GLib.timeout_add_seconds(2, lambda: self.save_pending_layout() and False)
+
+    def quit_all(self):
+        """Stop Hermes, then close the app: Hermes must not run on without it."""
+        if self.window:
+            self.window.hide()
+        if self.indicator:
+            self.indicator.set_status(AppIndicator.IndicatorStatus.PASSIVE)
+
+        def work():
+            try:
+                if self.hermes.pid():
+                    self.hermes.stop()
+            except (HermesError, OSError):
+                pass
+            GLib.idle_add(self.quit)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _indicator_mode(self, layout):
+        if not self._indicator_updating:
+            self.set_layout(layout)
+
+    def update_indicator(self, running, layout):
+        if not self.indicator:
+            return
+        self._indicator_updating = True
+        self._indicator_items["start_stop"].set_label("Stop Hermes" if running else "Start Hermes")
+        for key in ("extend", "mirror"):
+            self._indicator_items[key].set_sensitive(layout is not None)
+        if layout in ("extend", "mirror"):
+            self._indicator_items[layout].set_active(True)
+        self._indicator_updating = False
+
+    def effective_layout(self):
+        """The mode the tablet is in now if it is connected (what GNOME shows),
+        otherwise the one the next connection gets."""
+        if self.mutter:
+            try:
+                live = self.mutter.current_layout()
+                if live:
+                    return live
+            except GLib.Error:
+                pass
+        return self.pending_layout or self.hermes.layout()
+
+    def save_pending_layout(self):
+        """Save a mode applied live once no device is streaming: saving makes Hermes
+        end the Desktop app, which would cut a running stream."""
+        if not self.pending_layout:
+            return
+        try:
+            sessions = self.hermes.get("/api/metrics").get("sessions") or {}
+            if int(sessions.get("active") or 0) > 0:
+                return
+            self.hermes.set_layout(self.pending_layout)
+            self.pending_layout = None
+        except HermesError:
+            pass
+
+    def set_layout(self, layout):
+        """Apply the display mode. Returns False if it was not changed."""
+        # A connected tablet is switched through GNOME alone, in the background,
+        # with nothing asked of Hermes first: right after the switch Hermes is
+        # busy recreating its encoder and answers slowly. Hermes is told later;
+        # saving now would end the stream anyway.
+        if self.mutter and not self._switching:
+            self._switching = True
+
+            def work():
+                try:
+                    result = self.mutter.apply(layout)
+                except (HermesError, GLib.Error) as e:
+                    result = e
+                GLib.idle_add(done, result)
+
+            def done(result):
+                self._switching = False
+                if isinstance(result, Exception):
+                    log(f"switch to {layout} failed: {result}")
+                    if self.window:
+                        self.window.message(str(result))
+                elif result:
+                    self.pending_layout = layout
+                    # Save once the stream has settled, and refresh the window then.
+                    GLib.timeout_add_seconds(2, self._after_switch)
+                    return False
+                else:
+                    # No tablet connected: there is nothing to switch live.
+                    self._set_layout_in_hermes(layout)
+                if self.window:
+                    self.window.refresh()
+                return False
+
+            log(f"user chose {layout}")
+            threading.Thread(target=work, daemon=True).start()
+            return True
+        if self._switching:
+            return True
+        return self._set_layout_in_hermes(layout)
+
+    def _after_switch(self):
+        threading.Thread(target=self.save_pending_layout, daemon=True).start()
+        if self.window and self.window.get_visible():
+            self.window.refresh()
+        return False
+
+    def _set_layout_in_hermes(self, layout):
+        try:
+            if self.hermes.layout() == layout:
+                return True
+            # Hermes ends the running Desktop app when its settings are saved,
+            # and the mode only applies when the virtual display is created.
+            if self.hermes.app_running() and not self.confirm_reconnect(layout):
+                return False
+            self.hermes.set_layout(layout)
+            self.pending_layout = None
+        except (HermesError, GLib.Error) as e:
+            if self.window:
+                self.window.message(str(e))
+            return False
+        finally:
+            if self.window:
+                GLib.idle_add(lambda: self.window.refresh() and False)
+        return True
+
+    def confirm_reconnect(self, layout):
+        mode = "mirrored" if layout == "mirror" else "extended"
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window, modal=True, message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE, text=f"Switch to the {mode} display now?",
+            secondary_text=("The tablet is disconnected to apply it. Connect again in "
+                            "Moonlight to see the new mode."))
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Switch", Gtk.ResponseType.OK)
+        answer = dialog.run()
+        dialog.destroy()
+        return answer == Gtk.ResponseType.OK
+
+    @staticmethod
+    def open_settings():
+        # Through xdg-open with its output dropped: browsers print start-up noise.
+        subprocess.Popen(["xdg-open", WEB_UI], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def main():
+    app = App()
+    # Keep running in the top bar after the window is closed.
+    app.hold()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    return app.run(sys.argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
