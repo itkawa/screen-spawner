@@ -6,7 +6,7 @@ All notable changes to Screen Spawner are listed here.
 
 - Start Hermes at login; disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 
-## 0.2.0 (not released yet)
+## 0.2.0
 
 ### The Screen Spawner app
 
