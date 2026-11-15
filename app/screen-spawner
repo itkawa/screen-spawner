@@ -172,17 +172,20 @@ class Hermes:
         # (which a source build shows as a generic icon) would only confuse.
         # A command-line option overrides the config file without changing it.
         command = [*command, "system_tray=false"]
+        log("starting Hermes: " + " ".join(command))
         self._process = subprocess.Popen(
             command, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=_die_with_parent)
 
     def stop(self):
         """Ask Hermes to quit and wait for it. Blocking: call it off the GTK thread."""
+        log("stopping Hermes")
         try:
             self.post("/api/quit", {})
-        except HermesError:
+        except HermesError as e:
             pid = self.pid()
             if pid:
+                log(f"Hermes did not take the quit request ({e}); sending SIGTERM to {pid}")
                 os.kill(pid, signal.SIGTERM)
         for _ in range(100):
             if self._process:
@@ -1121,6 +1124,7 @@ class App(Gtk.Application):
             return
 
         def exited(pid, status):
+            log(f"Hermes exited, pid {pid}, status {status}")
             if self.hermes._process is process:
                 self.hermes._process = None
             self.hermes._pid = None
@@ -1138,6 +1142,7 @@ class App(Gtk.Application):
 
     def quit_all(self):
         """Stop Hermes, then close the app: Hermes must not run on without it."""
+        log("quit: stopping Hermes and closing the app")
         if self.window:
             self.window.hide()
         if self.indicator:
@@ -1280,11 +1285,37 @@ class App(Gtk.Application):
 
 
 def main():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    # A crash of the app itself leaves its Python traceback in the journal file.
+    import faulthandler
+    faulthandler.enable(open(LOG_FILE, "a"))
+
+    def excepthook(kind, value, tb):
+        import traceback
+        log("unexpected error:\n" + "".join(traceback.format_exception(kind, value, tb)).rstrip())
+        sys.__excepthook__(kind, value, tb)
+
+    sys.excepthook = excepthook
+    log(f"app started, pid {os.getpid()}")
     app = App()
     # Keep running in the top bar after the window is closed.
     app.hold()
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    return app.run(sys.argv)
+
+    # Ctrl+C in a terminal, or the system ending the session, quits the way the
+    # Quit button does: Hermes is stopped properly first.
+    def on_signal(name):
+        log(f"{name} received: quitting")
+        app.quit_all()
+        return GLib.SOURCE_REMOVE
+
+    for number, name in ((signal.SIGTERM, "SIGTERM"), (signal.SIGHUP, "SIGHUP")):
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, number, on_signal, name)
+    # PyGObject handles SIGINT itself while the app runs, and only leaves a
+    # Python-level handler alone; it wakes the main loop for it.
+    signal.signal(signal.SIGINT, lambda *_: GLib.idle_add(on_signal, "Ctrl+C (SIGINT)"))
+    status = app.run(sys.argv)
+    log("app closed")
+    return status
 
 
 if __name__ == "__main__":
