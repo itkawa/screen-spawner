@@ -39,10 +39,25 @@ Idle means the desktop with nothing moving. Without Hermes the tablet is not con
 
 The ping ran every 0.2 s during the same minute, from the laptop to the tablet. A frame at 60 fps has 16.7 ms; encoding takes under 3 ms.
 
+## 25 minutes of video
+
+A light video (water, snow, scrolling text) played on the tablet in extended mode for 25 minutes, over 2.4 GHz Wi-Fi. Measured for 30 seconds at the start and at the end:
+
+| | Start | After 25 minutes |
+|---|---|---|
+| CPU temperature, average / maximum | 45 / 47 °C | 46 / 46 °C |
+| CPU, whole system | 13% | 13% |
+| Hermes | 24% of one thread | 25% of one thread |
+| Intel GPU busy | 39% | 39% |
+| Frames per second | 42 | 46 |
+| Dropped frames since the tablet connected | 0 of 2 959 | 0 of 61 393 |
+
+The laptop did not warm up over time, and the load did not grow.
+
 ## What this shows
 
 * The computer has plenty of room: Screen Spawner adds 2–3% CPU when idle, and with a fullscreen video the whole system stays at 13–14%.
-* No frame was dropped in any run, on either Wi-Fi band.
+* No frame was dropped in any run, on either Wi-Fi band, and none in 25 minutes of continuous video; the temperature stayed at 45–46 °C.
 * Mirrored mode costs Hermes about half as much again as extended mode, because it copies a 1920×1080 frame instead of a 1280×720 one; for the system as a whole the difference is about one percent.
 * 2.4 GHz Wi-Fi worked without noticed stutter, but had occasional network delays of 20–50 ms; on 5 GHz there were practically none. 5 GHz Wi-Fi works best.
 * While idle, Hermes still encodes about 52 frames per second of an unchanged desktop, which keeps the GPU near its highest frequency instead of 300 MHz. Sending fewer frames while nothing changes would save power on battery; this is planned as a change to Hermes.

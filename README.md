@@ -135,52 +135,76 @@ Essential/protected system packages and their dependencies are always kept, even
 
 ## Usage
 
-### Start Hermes
+Everything is done in the **Screen Spawner** app. Open it from the application menu. It has a window with two tabs, **Screen Spawner** and **Activity**, and an icon in the top bar.
 
-Start **Hermes** from the application menu, or from a terminal:
+### Start and stop Hermes
 
-```bash
-/usr/bin/sunshine
-```
+Press the green **Start** button. Hermes needs a few seconds; then the status reads *Hermes is running* and the button turns into a red **Stop**.
 
-For a source installation, run `~/Apollo-Linux/build/sunshine` instead.
+Hermes runs only while the app runs:
 
-The launcher opens a terminal window on purpose, so startup errors stay visible. To stop Hermes, press `Ctrl+C` in that window.
+* closing the window with its × button only hides it; the app stays in the top bar, like Telegram, and Hermes keeps streaming;
+* **Quit**, in the window or in the top bar menu, stops Hermes and closes the app;
+* if the app itself ends unexpectedly, Hermes is stopped with it.
 
-Hermes has to be started again after every reboot.
+The first time, Hermes asks for a Web UI account: if the status says so, press **Hermes settings** and create a user name and password in the page that opens. The app itself does not need them.
 
-### Pair the tablet (once)
+Hermes has to be started again after every reboot; starting it at login is planned.
 
-1. On the laptop, open the Hermes Web UI at <https://localhost:47990> and complete the initial setup.
-2. On the tablet, install Moonlight and add the laptop. Moonlight usually finds it on the local network by itself; otherwise add it by IP address.
-3. Moonlight shows a PIN. Enter it on the **PIN** page of the Hermes Web UI.
-4. Grant the tablet its permissions on the same page, in the list of paired devices below the PIN field: **Launch Apps**, **View Streams**, **List Apps**, and **Touch Input**, **Mouse Input** and **Keyboard Input**. A newly paired device can only list the apps and watch, so without **Launch Apps** Moonlight disconnects as soon as you choose **Desktop**.
+### Pair a tablet or phone (once per device)
 
-Every further device, such as a phone, is paired and given its permissions the same way.
+1. On the tablet, install Moonlight and add the laptop. Moonlight usually finds it on the local network by itself; otherwise add it by IP address.
+2. In Moonlight, tap the laptop. Moonlight shows a 4-digit PIN.
+3. In the app, press **Pair a device…** (it is available while Hermes runs), enter the PIN and a name for the device, such as *Tablet* or *Phone*, and press **Pair**.
+4. The app waits until Moonlight finishes pairing and gives the device the permissions it needs: starting the desktop, watching the stream, and touch, pen, mouse, keyboard and controller input.
+
+Paired devices are listed under **Devices**. **Remove** unpairs one; it then needs a new PIN to connect.
 
 A phone with Moonlight works as a second monitor the same way as a tablet. Moonlight streams in 16:9, so a phone with a longer screen shows black bars at the sides.
-
-### Set up the Desktop app (once)
-
-Out of the box, the **Desktop** app does not create a virtual monitor, and the tablet just shows the laptop screen. To turn it on, open **Applications** in the Hermes Web UI, click **Edit** on **Desktop**, then:
-
-- turn on **Always create Virtual Display**;
-- set **Virtual Display Layout**:
-  - **Extend**: the tablet is a separate screen beside the laptop;
-  - **Mirror**: the tablet shows the same picture as the laptop's main screen, at that screen's resolution. Other monitors stay separate screens.
-
-Save. The setting applies from the next connection.
-
-There are two ways to mirror:
-
-- **Mirror** as above: the tablet is a virtual monitor that shows a copy of the main screen. The mode can be switched between Extend and Mirror at any time.
-- **Always create Virtual Display** turned off: Hermes streams the laptop's main screen itself, without a virtual monitor. Nothing changes in the display settings.
-
-While the tablet is connected, it can be moved in **Settings → Displays** like any other monitor; touch and the cursor follow it without reconnecting.
 
 ### Connect
 
 In Moonlight, open the laptop and choose **Desktop**. Hermes creates the virtual monitor at that moment, and the tablet shows it. The virtual monitor does not exist before a client connects.
+
+### Extended or mirrored
+
+Under **Display** choose:
+
+* **Extended**: the tablet is a separate screen beside the laptop, and windows can be moved onto it;
+* **Mirrored**: the tablet shows the same picture as the laptop's main screen. Other monitors stay separate screens.
+
+A connected tablet switches at once, without disconnecting. Otherwise the choice applies the next time it connects. The same switch is in the top bar menu.
+
+While the tablet is connected, it can also be moved in **Settings → Displays** like any other monitor; touch and the cursor follow it without reconnecting.
+
+### Activity: what is happening right now
+
+The **Activity** tab shows, once a second:
+
+* **Stream**: the encoder and whether it runs on the graphics hardware or the CPU, how many devices are connected, the resolution, frame rate, bitrate, encoding time per frame and dropped frames;
+* **Computer**: the CPU temperature, how busy the graphics are and at what frequency, and how much CPU Hermes and the whole system use;
+* **Hermes log**: the end of Hermes's log, as it is written.
+
+Nothing is measured while the tab is not open or the window is hidden. Measured numbers for a typical laptop are in [docs/performance.md](docs/performance.md).
+
+### Top bar menu
+
+The icon in the top bar opens a menu: open the window, start or stop Hermes, switch between extended and mirrored, open the Hermes settings, and quit.
+
+### Hermes settings
+
+**Hermes settings** opens the Hermes Web UI at <https://localhost:47990> in the browser, for everything the app does not cover. Note that Hermes ends the current session when an app is saved on its **Applications** page, and restarts when settings are applied on its **Configuration** page: the tablet is disconnected and has to connect again.
+
+### Uninstall from the app
+
+**Uninstall Screen Spawner…** opens a terminal with the uninstaller. It lists what it will remove and asks before removing anything. See also [Uninstall](#uninstall).
+
+### Without the app
+
+Hermes can also be run and set up without the app, through the **Hermes** launcher and the Web UI:
+
+* pair on the **PIN** page, then give the device **Launch Apps**, **View Streams**, **List Apps**, **Touch Input**, **Mouse Input** and **Keyboard Input** in the list of paired devices below it; without **Launch Apps** Moonlight disconnects as soon as **Desktop** is chosen;
+* on the **Applications** page, edit **Desktop**: turn on **Always create Virtual Display** and choose **Virtual Display Layout**, **Extend** or **Mirror**. With **Always create Virtual Display** off, Hermes streams the laptop's main screen itself, without a virtual monitor.
 
 ### Mouse, keyboard and touch
 
@@ -227,16 +251,13 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 
 ## Roadmap
 
-Version 0.1.0 has no app of its own: Hermes is started from the application menu and set up in its Web UI, as described above. Release history is in [CHANGELOG.md](CHANGELOG.md).
+Release history is in [CHANGELOG.md](CHANGELOG.md). Planned next for the Screen Spawner app:
 
-Planned for a later version is an optional **Screen Spawner** app in the top bar, so that Hermes and the tablet can be set up without the Web UI. Installing it will be optional, and the Web UI way will keep working. The app would:
-
-* start and stop Hermes, start it at login;
-* pair a new tablet by typing its PIN;
-* disconnect the tablet, which also removes its virtual monitor;
-* switch between modes at any time, without reconnecting:
-  * **extended**, with a scale for the tablet alone (100%, 125%, 150%…), so text and windows on it can be made larger while the laptop stays as it is;
-  * **mirrored**, either at the laptop's resolution (sharp, but small on a smaller tablet screen) or at a lower resolution on both screens, so that everything on the tablet is larger;
+* start Hermes at login;
+* disconnect the tablet from the app, which also removes its virtual monitor;
+* a scale for the tablet alone in extended mode (100%, 125%, 150%…), so text and windows on it can be made larger while the laptop stays as it is;
+* mirroring at a lower resolution on both screens, so that everything on the tablet is larger;
+* sound by screen: sound of a window on the tablet plays on the tablet, the rest on the computer;
 * choose which display is 1, 2 and 3, the way it works for physical monitors.
 
 ---
@@ -330,6 +351,7 @@ On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-dr
 | File | Purpose |
 |------|---------|
 | `install.sh` | Installs the dependencies, EVDI and Hermes |
+| `app/` | The Screen Spawner app: window, top bar icon, icons |
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `CHANGELOG.md` | Release history and planned changes |
 | `packaging/` | Docker builds and CPack packaging for modified Hermes |
