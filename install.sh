@@ -78,31 +78,58 @@ installed_packages() {
 # now depends on it. Example: the toolchain PPA upgrades libgcc-s1 and
 # libstdc++6, which then require the new gcc-16-base. Removing it later
 # would break the whole system, including apt itself.
+#
+# The rule is transitive: a new package that a kept new package depends
+# on is kept too. Example on Debian: e2fsprogs is kept, so its new
+# dependency libss2 must be kept as well, or uninstall cannot remove it.
 apt_install() {
-    local before after pkg status=0
+    local before after new keep pkg status=0
 
     before="$(installed_packages)"
     sudo apt install -y "$@" || status=$?
     after="$(installed_packages)"
+    new="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed '/^$/d')"
+    [ -n "$new" ] || return "$status"
 
-    while read -r pkg; do
-        [ -z "$pkg" ] && continue
-
-        # Only real dependencies count, not Breaks/Replaces/Recommends
-        if apt-cache rdepends --installed \
+    # One rdepends call for all new packages; only real dependencies
+    # count, not Breaks/Replaces/Recommends. awk then keeps every new
+    # package that something staying installed depends on, repeating
+    # until nothing more is added.
+    # shellcheck disable=SC2046  # one package name per word
+    keep="$(
+        {
+            printf '%s\n' "$before" | sed '/^$/d; s/:.*//; s/^/old /'
+            printf '%s\n' "$new" | sed 's/:.*//; s/^/new /'
+            apt-cache rdepends --installed \
                 --no-recommends --no-suggests --no-conflicts \
                 --no-breaks --no-replaces --no-enhances \
-                "$pkg" 2>/dev/null \
-            | tail -n +3 \
-            | sed 's/^[ |]*//; s/:.*//' \
-            | grep -qxFf <(printf '%s\n' "$before" | sed 's/:.*//'); then
+                $(printf '%s\n' "$new") 2>/dev/null
+        } | awk '
+            $1 == "old" && NF == 2 { stays[$2] = 1; next }
+            $1 == "new" && NF == 2 { isnew[$2] = 1; next }
+            /^Reverse Depends:/ { next }
+            /^[^ ]/ { pkg = $1; next }
+            pkg != "" { d = $0; sub(/^[ |]*/, "", d); sub(/:.*/, "", d); users[pkg] = users[pkg] " " d }
+            END {
+                do {
+                    changed = 0
+                    for (p in isnew) {
+                        if (p in kept) continue
+                        n = split(users[p], u, " ")
+                        for (i = 1; i <= n; i++)
+                            if (u[i] in stays) { stays[p] = kept[p] = 1; print p; changed = 1; break }
+                    }
+                } while (changed)
+            }'
+    )"
 
-            echo "Not recorded (required by previously installed packages): $pkg"
+    while read -r pkg; do
+        if printf '%s\n' "$keep" | grep -qxF "${pkg%%:*}"; then
+            echo "Not recorded (required by packages that stay installed): $pkg"
             continue
         fi
-
         record apt "$pkg"
-    done < <(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+    done <<< "$new"
     return "$status"
 }
 
