@@ -4,7 +4,7 @@ All notable changes to Screen Spawner are listed here.
 
 ## Planned
 
-- Start Hermes at login; disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
+- Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 
 ## 0.2.0
 
@@ -28,7 +28,6 @@ A window and a top bar icon, installed by `install.sh` with a launcher in the ap
 - `uninstall.sh` closes a running app first and removes the app, its icons, launcher and journal. It never removes the Hermes settings and pairings in `~/.config/hermes`.
 - `install.sh` no longer records a new package that another kept new package depends on (on Debian: `libss2`, needed by `e2fsprogs`), and no longer keeps a new package only because a package it recorded itself depends on it, so uninstall does not stop on them. Checking the new packages takes one `apt-cache` call instead of one per package.
 - The README describes the app and is installed with it; [docs/performance.md](docs/performance.md) has load, temperature and Wi-Fi measurements, taken with `tools/measure-load.py`.
-- Known issue on X11: other monitors go dark for about a second when the tablet's mode changes.
 
 ## 0.1.1
 

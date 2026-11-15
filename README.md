@@ -157,7 +157,7 @@ Hermes runs only while the app runs:
 
 The first time, Hermes asks for a Web UI account: if the status says so, press **Hermes settings** and create a user name and password in the page that opens. The app itself does not need them.
 
-Hermes has to be started again after every reboot; starting it at login is planned.
+Hermes does not start with the system, on purpose: it runs only when you start it, so it does not keep the graphics card busy and is not reachable on the network while you don't use the tablet. After a reboot, open the app and press **Start**.
 
 ### Pair a tablet or phone (once per device)
 
@@ -253,9 +253,7 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 
 * **The virtual monitor stays after you quit Moonlight.** Hermes only pauses the session, so the monitor remains in the display settings, and windows on it stay out of sight until you reconnect or stop Hermes.
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
-* **No autostart.** Hermes has to be started by hand after every reboot.
 * **One extra monitor at a time.** With EVDI, Hermes creates a single virtual monitor. A second device that connects, for example a phone while the tablet is connected, joins the same session and shows the same screen; both can control it. A separate screen per device is planned.
-* **On X11, other monitors go dark for a moment when the tablet's mode changes.** Switching between extended and mirrored, or connecting the tablet, changes the size of the shared X11 screen, and GNOME then sets up the other monitors again; an HDMI monitor stays black for about a second. Changing the tablet's resolution in GNOME Settings does the same. On Wayland there is no shared screen: checked, the other monitors stay on.
 
 ---
 
@@ -263,7 +261,6 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 
 Release history is in [CHANGELOG.md](CHANGELOG.md). Planned next for the Screen Spawner app:
 
-* start Hermes at login;
 * disconnect the tablet from the app, which also removes its virtual monitor;
 * a scale for the tablet alone in extended mode (100%, 125%, 150%…), so text and windows on it can be made larger while the laptop stays as it is;
 * mirroring at a lower resolution on both screens, so that everything on the tablet is larger;
