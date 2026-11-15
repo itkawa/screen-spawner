@@ -206,7 +206,8 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * mouse, keyboard and touch input reach the tablet's display;
 * there was no noticeable latency in use. The latency has not been measured with instruments;
 * a three-hour session with video playing ran without a single desktop freeze;
-* an Android phone with Moonlight works as a second monitor too: picture, touch, mouse, and rearranging the monitors.
+* an Android phone with Moonlight works as a second monitor too: picture, touch, mouse, and rearranging the monitors;
+* over **2.4 GHz Wi-Fi**, with the laptop and the tablet on the same network and about 20 other networks nearby, a fullscreen video played on the tablet (720p, extended display) for a minute, and no stutter was noticed. Hermes dropped no frames, and pings to the tablet lost nothing and mostly stayed under 20 ms, with rare spikes to about 50 ms. The same test on **5 GHz Wi-Fi** gave pings of 2–11 ms, without the occasional network delays of 20–50 ms seen on 2.4 GHz; no stutter was noticed on either. Mirrored mode, with the video fullscreen on the laptop and shown on the tablet, was checked the same way on both: no dropped frames and no stutter noticed. On a busy 2.4 GHz network short stutters are still possible, so 5 GHz Wi-Fi works best. The load on the computer and all the numbers are in [docs/performance.md](docs/performance.md).
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
 
@@ -220,6 +221,7 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
 * **No autostart.** Hermes has to be started by hand after every reboot.
 * **One extra monitor at a time.** With EVDI, Hermes creates a single virtual monitor. A second device that connects, for example a phone while the tablet is connected, joins the same session and shows the same screen; both can control it. A separate screen per device is planned.
+* **On X11, other monitors go dark for a moment when the tablet's mode changes.** Switching between extended and mirrored, or connecting the tablet, changes the size of the shared X11 screen, and GNOME then sets up the other monitors again; an HDMI monitor stays black for about a second. Changing the tablet's resolution in GNOME Settings does the same. Wayland does not have a shared screen and is not affected this way.
 
 ---
 
@@ -236,6 +238,22 @@ Planned for a later version is an optional **Screen Spawner** app in the top bar
   * **extended**, with a scale for the tablet alone (100%, 125%, 150%…), so text and windows on it can be made larger while the laptop stays as it is;
   * **mirrored**, either at the laptop's resolution (sharp, but small on a smaller tablet screen) or at a lower resolution on both screens, so that everything on the tablet is larger;
 * choose which display is 1, 2 and 3, the way it works for physical monitors.
+
+---
+
+## Upstream contributions
+
+Fixes I find while building Screen Spawner go to Hermes itself, so everyone who uses Hermes with EVDI gets them, not only Screen Spawner.
+
+### Merged
+
+* **[MrOz59/Hermes#117](https://github.com/MrOz59/Hermes/pull/117): an EVDI virtual display no longer freezes the desktop.** With EVDI on GNOME under X11, the whole desktop froze for seconds at a time, with `flip_done timed out` in the kernel log. I traced it to the EVDI event loop in Hermes: when the driver already had a frame waiting, `evdi_request_update()` returned true and sent no event for it, but Hermes ignored that answer and waited for an event, so the frame was never grabbed and its page flip never completed. Hermes now grabs such a frame at once and no longer repeats a request the driver is still answering, which also removes hundreds of `Update was already requested` kernel warnings a second. Merged on 12 November 2026; Hermes nightly builds include it since 0.7.0+49a0b43.
+
+  While the pull request was being checked, I also found why its CI failed: the newest Arch Linux ships OpenSSL 4.1, and Hermes no longer compiled against it. The maintainer fixed that in [#118](https://github.com/MrOz59/Hermes/pull/118).
+
+### Next
+
+The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: finding the EVDI connector, mirroring at different resolutions, and touch input on GNOME under X11. Once Hermes includes them, Screen Spawner can install the official Hermes packages instead of its own builds.
 
 ---
 
@@ -315,6 +333,8 @@ On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-dr
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `CHANGELOG.md` | Release history and planned changes |
 | `packaging/` | Docker builds and CPack packaging for modified Hermes |
+| `docs/performance.md` | Load and stream measurements, in extended and mirrored mode, over 2.4 and 5 GHz Wi-Fi |
+| `tools/measure-load.py` | The script that took those measurements |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11 and Wayland, libevdi 1.12 on Ubuntu 22.04 |
 
 ---
