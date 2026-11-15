@@ -99,7 +99,9 @@ For installation from prebuilt packages, use **0.1.1 or newer**.
 
 The script downloads a prebuilt, patched Hermes package from the **v0.1.1** release in the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
-to load at boot, and adds a **Hermes** launcher to the application menu.
+to load at boot, and installs the **Screen Spawner** app with its launcher in the
+application menu (see [Usage](#usage)). A **Hermes** launcher is added as well, for
+running Hermes without the app.
 Packages are available for amd64 Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.x
 (the Ubuntu 24.04 package), and Debian 13. Installation normally takes a few
 minutes; the first EVDI kernel module build can take longer.
@@ -121,11 +123,15 @@ memory use. On a machine with enough RAM, use:
 BUILD_JOBS=4 ./install.sh --build-from-source
 ```
 
+The app goes to `~/.local/share/screen-spawner`, together with a copy of this README. It needs Python with GTK 3 and the AyatanaAppIndicator library for its top bar icon; the installer adds them if they are missing. On plain GNOME, as on Debian, it also adds the AppIndicator extension for GNOME Shell; log out and in once after the installation to see the icon.
+
 ### Uninstall
 
 ```bash
 ./uninstall.sh
 ```
+
+or **Uninstall Screen Spawner…** in the app. A running app is closed first, which also stops Hermes.
 
 The prebuilt package and its new dependencies are recorded too. `install.sh` records every change it makes in `~/.local/state/screen-spawner/installed.list`, and `uninstall.sh` removes only those. It lists them and asks before removing anything. Anything that was there before the installation stays. Node.js 22 and NVM are kept if you have since installed your own global npm packages or other Node.js versions. `~/Apollo-Linux` is kept if it contains your own changes.
 
@@ -136,6 +142,8 @@ Essential/protected system packages and their dependencies are always kept, even
 ## Usage
 
 Everything is done in the **Screen Spawner** app. Open it from the application menu. It has a window with two tabs, **Screen Spawner** and **Activity**, and an icon in the top bar.
+
+![The Screen Spawner window: Hermes running, extended mode, two paired devices](docs/app-main.png)
 
 ### Start and stop Hermes
 
@@ -184,6 +192,8 @@ The **Activity** tab shows, once a second:
 * **Stream**: the encoder and whether it runs on the graphics hardware or the CPU, how many devices are connected, the resolution, frame rate, bitrate, encoding time per frame and dropped frames;
 * **Computer**: the CPU temperature, how busy the graphics are and at what frequency, and how much CPU Hermes and the whole system use;
 * **Hermes log**: the end of Hermes's log, as it is written.
+
+![The Activity tab while the tablet is connected: hardware encoding, 59 fps, no dropped frames, CPU at 45 °C](docs/app-activity.png)
 
 Nothing is measured while the tab is not open or the window is hidden. Measured numbers for a typical laptop are in [docs/performance.md](docs/performance.md).
 
@@ -245,7 +255,7 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
 * **No autostart.** Hermes has to be started by hand after every reboot.
 * **One extra monitor at a time.** With EVDI, Hermes creates a single virtual monitor. A second device that connects, for example a phone while the tablet is connected, joins the same session and shows the same screen; both can control it. A separate screen per device is planned.
-* **On X11, other monitors go dark for a moment when the tablet's mode changes.** Switching between extended and mirrored, or connecting the tablet, changes the size of the shared X11 screen, and GNOME then sets up the other monitors again; an HDMI monitor stays black for about a second. Changing the tablet's resolution in GNOME Settings does the same. Wayland does not have a shared screen and is not affected this way.
+* **On X11, other monitors go dark for a moment when the tablet's mode changes.** Switching between extended and mirrored, or connecting the tablet, changes the size of the shared X11 screen, and GNOME then sets up the other monitors again; an HDMI monitor stays black for about a second. Changing the tablet's resolution in GNOME Settings does the same. On Wayland there is no shared screen: checked, the other monitors stay on.
 
 ---
 
@@ -272,9 +282,13 @@ Fixes I find while building Screen Spawner go to Hermes itself, so everyone who 
 
   While the pull request was being checked, I also found why its CI failed: the newest Arch Linux ships OpenSSL 4.1, and Hermes no longer compiled against it. The maintainer fixed that in [#118](https://github.com/MrOz59/Hermes/pull/118).
 
+### Sent
+
+* **[MrOz59/Hermes#123](https://github.com/MrOz59/Hermes/pull/123): Hermes finds the connector of an EVDI virtual display.** Hermes looked for the `evdi` driver under the connector's own sysfs entry, which has none, so it never found the virtual monitor's connector and could not activate it. It now reads the driver from the card's device. Waiting for review.
+
 ### Next
 
-The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: finding the EVDI connector, mirroring at different resolutions, and touch input on GNOME under X11. Once Hermes includes them, Screen Spawner can install the official Hermes packages instead of its own builds.
+The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: mirroring at different resolutions, and touch input on GNOME under X11. Once Hermes includes them, Screen Spawner can install the official Hermes packages instead of its own builds.
 
 ---
 
@@ -355,6 +369,7 @@ On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-dr
 | `uninstall.sh` | Removes what `install.sh` installed |
 | `CHANGELOG.md` | Release history and planned changes |
 | `packaging/` | Docker builds and CPack packaging for modified Hermes |
+| `docs/app-main.png`, `docs/app-activity.png` | Screenshots of the app |
 | `docs/performance.md` | Load and stream measurements, in extended and mirrored mode, over 2.4 and 5 GHz Wi-Fi |
 | `tools/measure-load.py` | The script that took those measurements |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11 and Wayland, libevdi 1.12 on Ubuntu 22.04 |

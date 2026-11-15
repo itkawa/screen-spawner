@@ -4,7 +4,30 @@ All notable changes to Screen Spawner are listed here.
 
 ## Planned
 
-- An optional **Screen Spawner** app in the top bar: start and stop Hermes, pair a tablet by PIN, disconnect it, switch between extended and mirrored modes, set a scale for the tablet, choose the order of the displays. See the [Roadmap](README.md#roadmap).
+- Start Hermes at login; disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
+
+## 0.2.0 (not released yet)
+
+### The Screen Spawner app
+
+A window and a top bar icon, installed by `install.sh` with a launcher in the application menu:
+
+- start and stop Hermes; Hermes runs only while the app runs, and **Quit**, Ctrl+C in a terminal or the app ending stop it;
+- pair a tablet or phone by the PIN Moonlight shows; the app gives the new device the permissions it needs, so it is no longer refused when it starts the desktop;
+- remove paired devices;
+- switch a connected tablet between extended and mirrored at once, without disconnecting it; the choice is also kept for the next connection;
+- turn on the virtual display of the Desktop app by itself, so no setup in the Hermes Web UI is needed;
+- an **Activity** tab, while it is open: the encoder, frame rate, bitrate, encoding time and dropped frames, the CPU temperature, graphics and CPU load, and the Hermes log as it is written;
+- open the Hermes Web UI; uninstall Screen Spawner;
+- closing the window keeps the app in the top bar; opening it again from the menu shows the same window;
+- a short journal in `~/.local/state/screen-spawner/app.log`.
+
+### Also
+
+- New app icon.
+- `uninstall.sh` closes a running app first and removes the app, its icons, launcher and journal.
+- The README describes the app and is installed with it; [docs/performance.md](docs/performance.md) has load, temperature and Wi-Fi measurements, taken with `tools/measure-load.py`.
+- Known issue on X11: other monitors go dark for about a second when the tablet's mode changes.
 
 ## 0.1.1
 
