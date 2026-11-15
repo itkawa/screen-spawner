@@ -25,7 +25,8 @@ A window and a top bar icon, installed by `install.sh` with a launcher in the ap
 ### Also
 
 - New app icon.
-- `uninstall.sh` closes a running app first and removes the app, its icons, launcher and journal.
+- `uninstall.sh` closes a running app first and removes the app, its icons, launcher and journal. It never removes the Hermes settings and pairings in `~/.config/hermes`.
+- `install.sh` no longer records a new package that another kept new package depends on (on Debian: `libss2`, needed by `e2fsprogs`), so uninstall does not stop on it. Checking the new packages takes one `apt-cache` call instead of one per package.
 - The README describes the app and is installed with it; [docs/performance.md](docs/performance.md) has load, temperature and Wi-Fi measurements, taken with `tools/measure-load.py`.
 - Known issue on X11: other monitors go dark for about a second when the tablet's mode changes.
 
