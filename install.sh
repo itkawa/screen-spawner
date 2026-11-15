@@ -98,6 +98,9 @@ apt_install() {
     # shellcheck disable=SC2046  # one package name per word
     keep="$(
         {
+            # Packages recorded by an earlier apt_install call go away
+            # on uninstall, so they do not count as staying installed.
+            awk -F'\t' '$1 == "apt" { sub(/:.*/, "", $2); print "rec " $2 }' "$MANIFEST" 2>/dev/null
             printf '%s\n' "$before" | sed '/^$/d; s/:.*//; s/^/old /'
             printf '%s\n' "$new" | sed 's/:.*//; s/^/new /'
             apt-cache rdepends --installed \
@@ -105,7 +108,8 @@ apt_install() {
                 --no-breaks --no-replaces --no-enhances \
                 $(printf '%s\n' "$new") 2>/dev/null
         } | awk '
-            $1 == "old" && NF == 2 { stays[$2] = 1; next }
+            $1 == "rec" && NF == 2 { rec[$2] = 1; next }
+            $1 == "old" && NF == 2 { if (!($2 in rec)) stays[$2] = 1; next }
             $1 == "new" && NF == 2 { isnew[$2] = 1; next }
             /^Reverse Depends:/ { next }
             /^[^ ]/ { pkg = $1; next }
