@@ -281,9 +281,7 @@ Fixes I find while building Screen Spawner go to Hermes itself, so everyone who 
 
   While the pull request was being checked, I also found why its CI failed: the newest Arch Linux ships OpenSSL 4.1, and Hermes no longer compiled against it. The maintainer fixed that in [#118](https://github.com/MrOz59/Hermes/pull/118).
 
-### Sent
-
-* **[MrOz59/Hermes#123](https://github.com/MrOz59/Hermes/pull/123): Hermes finds the connector of an EVDI virtual display.** Hermes looked for the `evdi` driver under the connector's own sysfs entry, which has none, so it never found the virtual monitor's connector and could not activate it. It now reads the driver from the card's device. Waiting for review.
+* **[MrOz59/Hermes#123](https://github.com/MrOz59/Hermes/pull/123): Hermes finds the connector of an EVDI virtual display.** Hermes looked for the `evdi` driver under the connector's own sysfs entry, which has none, so it never found the virtual monitor's connector and could not activate it. It now reads the driver from the card's device. The maintainer carried it onto the current main in [#128](https://github.com/MrOz59/Hermes/pull/128) together with a CI fix; merged on 15 November 2026.
 
 ### Next
 
