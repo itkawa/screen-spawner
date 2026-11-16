@@ -159,7 +159,7 @@ The first time, Hermes asks for a Web UI account: if the status says so, press *
 
 Hermes does not start with the system, on purpose: it runs only when you start it, so it does not keep the graphics card busy and is not reachable on the network while you don't use the tablet. After a reboot, open the app and press **Start**.
 
-To have the app itself ready after logging in, tick **Open Screen Spawner at login, in the top bar** in its window. The app then opens in the top bar without its window; Hermes still waits for **Start**. Untick it to stop. Uninstalling removes this setting too.
+To have the app ready after logging in, tick **Open Screen Spawner at login, in the top bar** under **At login** in its window. The app then opens in the top bar without its window, and Hermes waits for **Start**. To have Hermes running right away as well, also tick **Start Hermes too**. Untick them to stop. Uninstalling removes these settings too.
 
 ### Pair a tablet or phone (once per device)
 

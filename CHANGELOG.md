@@ -19,7 +19,7 @@ A window and a top bar icon, installed by `install.sh` with a launcher in the ap
 - turn on the virtual display of the Desktop app by itself, so no setup in the Hermes Web UI is needed;
 - an **Activity** tab, while it is open: the encoder, frame rate, bitrate, encoding time and dropped frames, the CPU temperature, graphics and CPU load, and the Hermes log as it is written;
 - open the Hermes Web UI; uninstall Screen Spawner;
-- optionally open at login, in the top bar without the window; off until you tick it, and Hermes still starts only with **Start**;
+- optionally open at login, in the top bar without the window, and optionally start Hermes then too; both are off until you tick them;
 - closing the window keeps the app in the top bar; opening it again from the menu shows the same window;
 - a short journal in `~/.local/state/screen-spawner/app.log`.
 

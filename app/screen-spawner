@@ -53,9 +53,11 @@ ICON_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "icons")
 STATE_DIR = os.path.expanduser("~/.local/state/screen-spawner")
 LOG_FILE = os.path.join(STATE_DIR, "app.log")
 # Opening the app at login is the user's choice, off until they tick it in the
-# window. It opens only the app, in the top bar; Hermes still starts only with Start.
+# window. It opens the app in the top bar; Hermes starts too only if the user
+# ticks that separately. Both live in the autostart entry itself.
 AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", "screen-spawner.desktop")
 HIDDEN_ARG = "--hidden"
+START_ARG = "--start"
 
 
 def log(message):
@@ -470,11 +472,19 @@ class Mutter:
         return True
 
 
-def autostart_enabled():
-    return os.path.exists(AUTOSTART_FILE)
+def autostart_state():
+    """(opens at login, starts Hermes at login), from the autostart entry."""
+    try:
+        with open(AUTOSTART_FILE) as f:
+            for line in f:
+                if line.startswith("Exec="):
+                    return True, START_ARG in line.split()
+    except FileNotFoundError:
+        return False, False
+    return True, False
 
 
-def set_autostart(enabled):
+def set_autostart(enabled, start_hermes=False):
     if not enabled:
         try:
             os.remove(AUTOSTART_FILE)
@@ -492,7 +502,7 @@ def set_autostart(enabled):
                 "Type=Application\n"
                 "Name=Screen Spawner\n"
                 "Comment=Opens Screen Spawner in the top bar at login\n"
-                f"Exec={program} {HIDDEN_ARG}\n"
+                f"Exec={program} {HIDDEN_ARG}{' ' + START_ARG if start_hermes else ''}\n"
                 "Icon=screen-spawner\n"
                 "Terminal=false\n"
                 "X-GNOME-Autostart-enabled=true\n")
@@ -841,11 +851,18 @@ class Window(Gtk.ApplicationWindow):
         devices.add(self.pair_button)
         outer.add(self.section("Devices", devices))
 
+        login = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.autostart = Gtk.CheckButton(label="Open Screen Spawner at login, in the top bar")
-        self.autostart.set_tooltip_text("Hermes still starts only when you press Start.")
-        self.autostart.set_active(autostart_enabled())
+        self.autostart.set_tooltip_text("Without this, Hermes starts only when you press Start.")
+        self.autostart_start = Gtk.CheckButton(label="Start Hermes too", margin_start=24)
+        self.autostart_start.set_tooltip_text(
+            "Hermes keeps the graphics card busy and is reachable on the network while it runs.")
+        self.show_autostart()
         self.autostart.connect("toggled", self.on_autostart)
-        outer.add(self.autostart)
+        self.autostart_start.connect("toggled", self.on_autostart)
+        login.add(self.autostart)
+        login.add(self.autostart_start)
+        outer.add(self.section("At login", login))
 
         # Bottom buttons
         bottom = Gtk.Box(spacing=12)
@@ -1125,17 +1142,31 @@ class Window(Gtk.ApplicationWindow):
             return
         self.app.quit()
 
-    def on_autostart(self, button):
-        enabled = button.get_active()
+    def show_autostart(self):
+        enabled, start = autostart_state()
+        self._autostart_updating = True
+        self.autostart.set_active(enabled)
+        self.autostart_start.set_active(enabled and start)
+        self.autostart_start.set_sensitive(enabled)
+        self._autostart_updating = False
+
+    def on_autostart(self, *_):
+        if self._autostart_updating:
+            return
+        enabled = self.autostart.get_active()
+        start = enabled and self.autostart_start.get_active()
         try:
-            set_autostart(enabled)
-            log(f"open at login: {'on' if enabled else 'off'}")
+            set_autostart(enabled, start)
+            log(f"at login: open {'on' if enabled else 'off'}, start Hermes {'on' if start else 'off'}")
         except OSError as error:
-            log(f"open at login: could not change: {error}")
-            button.handler_block_by_func(self.on_autostart)
-            button.set_active(autostart_enabled())
-            button.handler_unblock_by_func(self.on_autostart)
-            self.message(f"Could not change opening at login:\n{error}")
+            log(f"at login: could not change: {error}")
+            self.message(f"Could not change what happens at login:\n{error}")
+        self.show_autostart()
+
+    def start_hermes(self):
+        """Start, as the button does, unless Hermes already runs."""
+        if not self._busy and not self.hermes.pid():
+            self.on_start_stop()
 
     def on_close(self, *_):
         if self.app.indicator:
@@ -1161,6 +1192,7 @@ class App(Gtk.Application):
                 Gio.DBusSignalFlags.NONE, lambda *_: self.on_monitors_changed())
         self.window = None
         self.start_hidden = False
+        self.start_hermes_at_launch = False
         self.indicator = None
         self._indicator_items = {}
         self._indicator_updating = False
@@ -1190,6 +1222,9 @@ class App(Gtk.Application):
             self.build_indicator()
         # Opened at login: stay in the top bar. Without a top bar icon the
         # window is the only way in, so it opens anyway.
+        if first and self.start_hermes_at_launch:
+            log("opened at login: starting Hermes")
+            self.window.start_hermes()
         if first and self.start_hidden and self.indicator:
             log("opened at login: staying in the top bar")
             return
@@ -1412,6 +1447,9 @@ def main():
     if HIDDEN_ARG in sys.argv:
         sys.argv.remove(HIDDEN_ARG)
         app.start_hidden = True
+    if START_ARG in sys.argv:
+        sys.argv.remove(START_ARG)
+        app.start_hermes_at_launch = True
 
     # Ctrl+C in a terminal, or the system ending the session, quits the way the
     # Quit button does: Hermes is stopped properly first.
