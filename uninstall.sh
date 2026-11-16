@@ -108,6 +108,9 @@ if pkill -TERM -u "$USER" -f "^python3 $APP_BIN( |$)" 2>/dev/null; then
     done
 fi
 
+# The app's "open at login" entry, made by the app itself, not by install.sh.
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/screen-spawner.desktop"
+
 # Anchored to the start of the command line, so it matches only the
 # Hermes binary itself, not shells or editors that mention its path.
 pkill -TERM -f '^([^ ]*/)?(build/)?sunshine(-[0-9][[:alnum:]_.+~-]*)?( |$)' 2>/dev/null || true
