@@ -245,10 +245,10 @@ select_package() {
             esac ;;
     esac
     case "$PACKAGE_SYSTEM" in
-        ubuntu22.04) PACKAGE_SHA256="5bd1c0bb6ae61720068aaf2b99e222676ac2eb203019642290072329107ae7a7" ;;
-        ubuntu24.04) PACKAGE_SHA256="26e42ceb8225f2203b8dae6be30f697ef39bbee85cb020b35ac867d0d815999f" ;;
-        ubuntu26.04) PACKAGE_SHA256="6f2bd430f3e80f73ccbfdef2e365b478901db7195c9947c30a58d84fcf0fc37d" ;;
-        debian13) PACKAGE_SHA256="c0178cdf89df3b734b19fef147b35d2f09d80030d84425f4e0e7cbf1fd796657" ;;
+        ubuntu22.04) PACKAGE_SHA256="30875c95367605f19066023340423e7bde85b63cd06f423b4867b5dc276f7673" ;;
+        ubuntu24.04) PACKAGE_SHA256="43d66fe9af984afbb32895a47c032f19042d804030bb21b5f2113b4fc3967d8c" ;;
+        ubuntu26.04) PACKAGE_SHA256="fa0297a43558bcf11e43698bf3d03bd77419fa7c304236ef48d9db212965a483" ;;
+        debian13) PACKAGE_SHA256="903a2c65cf7a69e7a881098bfe273fe8ce283e2f3e1ed76ce22e826d5ce81c82" ;;
         *) return 1 ;;
     esac
     PACKAGE_FILE="hermes-screen-spawner_0.5.1+ss0.1.1_${PACKAGE_SYSTEM}_amd64.deb"

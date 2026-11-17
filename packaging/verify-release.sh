@@ -6,20 +6,20 @@ cd "$project"
 . "$project/packaging/workspace.sh"
 # Trust only this explicitly selected checkout, without changing global Git config.
 git() { command git -c safe.directory="$project" "$@"; }
-refs=$(git ls-remote origin refs/heads/main refs/tags/v0.1.1)
+refs=$(git ls-remote origin refs/heads/main refs/tags/v0.2.0)
 printf '%s\n' "$refs"
 main=$(printf '%s\n' "$refs" | awk '$2=="refs/heads/main" {print $1}')
-tag=$(printf '%s\n' "$refs" | awk '$2=="refs/tags/v0.1.1" {print $1}')
+tag=$(printf '%s\n' "$refs" | awk '$2=="refs/tags/v0.2.0" {print $1}')
 [ -n "$main" ] && [ "$main" = "$tag" ]
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL --retry 3 --connect-timeout 20 --max-time 60 \
-    https://api.github.com/repos/itkawa/screen-spawner/releases/tags/v0.1.1 -o "$tmp/release.json"
+    https://api.github.com/repos/itkawa/screen-spawner/releases/tags/v0.2.0 -o "$tmp/release.json"
 python3 - "$tmp/release.json" <<'PY'
 import json, sys
 release=json.load(open(sys.argv[1]))
 assert release['draft'] is False
-assert release['tag_name']=='v0.1.1'
+assert release['tag_name']=='v0.2.0'
 print('Release is public:', release['html_url'])
 PY
 curl -fsSL --retry 3 --connect-timeout 20 --max-time 60 \

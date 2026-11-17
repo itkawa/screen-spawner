@@ -1,4 +1,4 @@
-# Hermes packages for Screen Spawner 0.1.1
+# Hermes packages for Screen Spawner 0.2.0
 
 Run from the Screen Spawner repository on an amd64 Linux Docker host:
 
@@ -81,11 +81,12 @@ containers or host module directories are used.
 ## Publication by the owner
 
 Review the logs and changes first. `~/release-packages.sh` (also kept here)
-commits the listed files, pushes main and creates the new v0.1.1 tag without force.
-The existing v0.1.0 tag and release remain unchanged.
+commits the listed files and pushes main; the Screen Spawner v0.2.0 tag is moved
+to that commit. The packages are rebuilt as 0.5.1+ss0.1.1 and replace the files of
+the existing builds release v0.1.1 (nobody but our own tests had installed them).
 The agent must not run it. Upload the four `.deb` files and `SHA256SUMS` from
-`../packages-0.1.1/` to the separate screen-spawner-hermes-builds v0.1.1 release.
-Publish the Screen Spawner release afterward with `RELEASE-0.1.1.md`; it links
+`../packages-0.1.1/` to the separate screen-spawner-hermes-builds v0.1.1 release (replacing its files).
+Publish the Screen Spawner release afterward with `RELEASE-0.2.0.md`; it links
 to the builds release and needs no duplicated binary attachments.
 
 Before testing on the live desktop, stop Hermes and run
@@ -94,6 +95,20 @@ check X11/Wayland with the tablet and phone: picture, input, rearrangement and
 mirroring. Keep the backup until both modes work. Finally run
 `./packaging/verify-release.sh` to check main/tag equality, public release status,
 and downloads/checksums. Local containers cannot replace the live test.
+
+## Rebuilding for a new package version
+
+Each package version gets its own build container (`ss-package-<system>-<version>`)
+on the same `ss-package-<system>` volume. When the volume holds a tree with an
+older version of the patch, `container-build.sh` replaces only the files whose
+content changes, so the rebuild recompiles just those. `SS_BUILD_MIN_GIB` and
+`SS_TEST_MIN_GIB` lower the 7 GiB memory check only when the owner allows it for
+such an incremental rebuild. Test containers are removed after each run; the log
+keeps the result.
+
+When only the patch and the build scripts changed, make the corresponding-source
+archive from the previous one with
+`./packaging/refresh-source-archive.sh OLD_ARCHIVE OLD_VERSION NEW_VERSION PACKAGE_DIR`.
 
 To repackage an already completed build without compiling again, run
 `./packaging/build-deb.sh SYSTEM --package-only`. This uses the retained build
@@ -130,7 +145,7 @@ prepared codec libraries.
 
 Publish the four DEBs, corresponding-source archive and SHA256SUMS in
 https://github.com/itkawa/screen-spawner-hermes-builds/releases/tag/v0.1.1.
-The Screen Spawner v0.1.1 release links there. Full builds require 7 GiB
+The Screen Spawner v0.2.0 release links there. Full builds require 7 GiB
 available; --package-only requires 1 GiB and never compiles Hermes.
 
 ## Local build workspace

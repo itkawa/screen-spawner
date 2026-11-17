@@ -19,8 +19,10 @@ exec 9>"$workspace/docker-tests/.package-build.lock"
 flock -n 9 || { echo 'ERROR: another build or test is running.' >&2; exit 1; }
 free -g
 available=$(awk '/MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo)
-[ "$available" -ge 7 ] || { echo 'ERROR: less than 7 GiB available; ask the owner.' >&2; exit 1; }
-docker run --name "ss-test-011r3-$system-$mode" --memory=6g --cpus=4 --user root \
+# Tests do not compile Hermes; SS_TEST_MIN_GIB lowers the limit when the owner allows it.
+[ "$available" -ge "${SS_TEST_MIN_GIB:-7}" ] || { echo 'ERROR: not enough memory available; ask the owner.' >&2; exit 1; }
+# The log keeps the result; the container is removed, so repeated runs need no cleanup.
+docker run --rm --name "ss-test-021-$system-$mode" --memory=6g --cpus=4 --user root \
     -e TEST_SYSTEM="$system" -e TEST_MODE="$mode" \
     -v "$project:/project:ro" -v "$workspace/packages-0.1.1:/packages:ro" \
     "$image" bash /project/packaging/container-test.sh \

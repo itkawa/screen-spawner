@@ -7,9 +7,9 @@ import sys
 
 web = Path(sys.argv[1])
 notice = '''<footer id="screen-spawner-source-notice" style="padding:0.75rem;text-align:center;font-size:0.875rem">
-Modified Hermes for Screen Spawner 0.1.1 ·
+Modified Hermes for Screen Spawner 0.2.0 ·
 <a href="https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.1.1/hermes-screen-spawner-0.1.1-source.tar.xz" target="_blank" rel="noopener noreferrer">Download corresponding source</a> ·
-<a href="https://github.com/itkawa/screen-spawner/blob/v0.1.1/packaging/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener noreferrer">Licenses and third-party notices</a>
+<a href="https://github.com/itkawa/screen-spawner/blob/v0.2.0/packaging/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener noreferrer">Licenses and third-party notices</a>
 </footer>'''
 count = 0
 for page in sorted(web.glob('*.html')):

@@ -18,9 +18,30 @@ if [ ! -d Hermes/.git ]; then
     git clone --no-checkout https://github.com/MrOz59/Hermes Hermes
 fi
 cd Hermes
-git checkout --detach 7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99
+revision=7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99
+git checkout --detach "$revision"
 if ! git apply --reverse --check /project/patches/evdi-fix.patch 2>/dev/null; then
-    git apply /project/patches/evdi-fix.patch
+    if git diff --quiet "$revision"; then
+        git apply /project/patches/evdi-fix.patch
+    else
+        # A retained tree carries an older version of the patch. Build the
+        # wanted files in a separate index and replace only those that differ,
+        # so an incremental build recompiles just what the new patch changed.
+        index=$(mktemp)
+        wanted=$(mktemp -d)
+        GIT_INDEX_FILE=$index git read-tree "$revision"
+        GIT_INDEX_FILE=$index git apply --cached /project/patches/evdi-fix.patch
+        mapfile -t files < <( { git diff --name-only "$revision"; GIT_INDEX_FILE=$index git diff --cached --name-only "$revision"; } | sort -u)
+        GIT_INDEX_FILE=$index git checkout-index --prefix="$wanted/" -- "${files[@]}"
+        for file in "${files[@]}"; do
+            if ! cmp -s "$wanted/$file" "$file"; then
+                echo "Updating $file to the current patch"
+                cp "$wanted/$file" "$file"
+            fi
+        done
+        rm -rf "$index" "$wanted"
+        git apply --reverse --check /project/patches/evdi-fix.patch
+    fi
 fi
 for attempt in 1 2 3; do
     if git submodule update --init --recursive; then break; fi

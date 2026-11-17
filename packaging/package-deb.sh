@@ -43,9 +43,9 @@ python3 /project/packaging/collect-license-notices.py \
     third-party build/_deps/boost-src build/_deps/json-src node_modules
 
 cat > "$stage/usr/share/doc/hermes-screen-spawner/SOURCE" <<'SOURCE'
-Modified Hermes 0.5.1 for Screen Spawner 0.1.1 (GPL-3.0).
+Modified Hermes 0.5.1 for Screen Spawner 0.2.0 (GPL-3.0).
 Upstream: https://github.com/MrOz59/Hermes/tree/7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99
-Modifications and build scripts: https://github.com/itkawa/screen-spawner/tree/v0.1.1
+Modifications and build scripts: https://github.com/itkawa/screen-spawner/tree/v0.2.0
 See patches/evdi-fix.patch and packaging/ in that repository.
 Full corresponding-source archive (including dependencies and build scripts):
 https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.1.1/hermes-screen-spawner-0.1.1-source.tar.xz
@@ -71,7 +71,7 @@ set(CPACK_PACKAGE_VERSION "0.5.1+ss0.1.1~$system")
 set(CPACK_PACKAGE_CONTACT "itkawa <10118073+itkawa@users.noreply.github.com>")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "itkawa <10118073+itkawa@users.noreply.github.com>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Hermes with the Screen Spawner EVDI patch")
-set(CPACK_PACKAGE_DESCRIPTION "Hermes 0.5.1 modified for Screen Spawner 0.1.1. GPL-3.0.")
+set(CPACK_PACKAGE_DESCRIPTION "Hermes 0.5.1 modified for Screen Spawner 0.2.0. GPL-3.0.")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/itkawa/screen-spawner")
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "hermes")
