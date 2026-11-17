@@ -1,7 +1,79 @@
 Local changes to Hermes (https://github.com/MrOz59/Hermes), licensed under GPL-3.0 like Hermes itself.
 
+diff --git a/src/confighttp.cpp b/src/confighttp.cpp
+index ecc40487..54d1a01d 100644
+--- a/src/confighttp.cpp
++++ b/src/confighttp.cpp
+@@ -13,6 +13,8 @@
+ #include <set>
+ #include <sstream>
+ #include <thread>
++#include <condition_variable>
++#include <mutex>
+ #include <numeric>
+ #include <algorithm>
+ #include <atomic>
+@@ -2980,6 +2982,18 @@ fi')CLIP";
+    *
+    * On Windows, if running in a service, a special shutdown code is returned.
+    */
++  // A quit request answers only if Hermes is still running 5 s later. The
++  // thread that waits for that must let go of the response before the server
++  // is destroyed: a response that outlives it crashes Hermes when the thread
++  // writes or releases it, which happens whenever shutting down takes longer
++  // than 5 s (closing an EVDI display can).
++  namespace {
++    std::mutex quit_mutex;
++    std::condition_variable quit_cv;
++    bool server_stopping = false;
++    int quit_waiters = 0;
++  }  // namespace
++
+   void quit(resp_https_t response, req_https_t request) {
+     if (!authenticate(response, request)) {
+       return;
+@@ -3000,9 +3014,21 @@ fi')CLIP";
+       lifetime::exit_sunshine(0, true);
+     }
+     // If exit fails, write a response after 5 seconds.
+-    std::thread write_resp([response]{
+-      std::this_thread::sleep_for(5s);
+-      response->write();
++    {
++      std::lock_guard<std::mutex> lock(quit_mutex);
++      if (server_stopping) {
++        return;
++      }
++      ++quit_waiters;
++    }
++    std::thread write_resp([response]() mutable {
++      std::unique_lock<std::mutex> lock(quit_mutex);
++      if (!quit_cv.wait_for(lock, 5s, [] { return server_stopping; })) {
++        response->write();
++      }
++      response.reset();
++      --quit_waiters;
++      quit_cv.notify_all();
+     });
+     write_resp.detach();
+   }
+@@ -3271,6 +3297,14 @@ fi')CLIP";
+     // Wait for any event
+     shutdown_event->view();
+ 
++    // Let a pending quit request drop its response while the server still exists.
++    {
++      std::unique_lock<std::mutex> lock(quit_mutex);
++      server_stopping = true;
++      quit_cv.notify_all();
++      quit_cv.wait(lock, [] { return quit_waiters == 0; });
++    }
++
+     server.stop();
+ 
+     tcp.join();
 diff --git a/src/platform/linux/kmsgrab.cpp b/src/platform/linux/kmsgrab.cpp
-index 89987125..473113f7 100644
+index 89987125..677fe9bd 100644
 --- a/src/platform/linux/kmsgrab.cpp
 +++ b/src/platform/linux/kmsgrab.cpp
 @@ -1772,6 +1772,7 @@ namespace platf {
@@ -27,26 +99,86 @@ index 89987125..473113f7 100644
          return 0;
        }
  
-@@ -1804,6 +1813,18 @@ namespace platf {
+@@ -1792,6 +1801,18 @@ namespace platf {
+                         bool *) override {
+         auto next_frame = std::chrono::steady_clock::now();
+         auto last_frame = buffer->frame_number();
++        // The first frame is always copied, so a new session starts with a picture.
++        bool copied_any = false;
++        std::uint64_t copied_frame = 0;
++        // A mode switch changes both the output's buffer and the desktop
++        // layout, and GNOME reports them in either order: the layout about
++        // 0.2 s after the new buffer, or the layout first and the buffer up
++        // to 0.1 s later. Each would reinitialise capture and create a new
++        // encoder, so whichever comes first waits briefly for the other.
++        constexpr auto max_layout_wait = std::chrono::milliseconds {500};
++        constexpr auto max_mode_wait = std::chrono::milliseconds {250};
++        bool change_pending = false;
++        std::chrono::steady_clock::time_point change_seen_at {};
+ 
+         while (true) {
+           const auto now = std::chrono::steady_clock::now();
+@@ -1804,12 +1825,58 @@ namespace platf {
              next_frame = now + delay;
            }
  
-+          // The monitors were rearranged: reinitialising re-reads this
-+          // output's position, so absolute input follows it.
-+          if (VDISPLAY::displayLayoutGeneration() != layout_generation) {
-+            BOOST_LOG(info) << "EVDI capture: the desktop layout changed; reinitialising to re-read the input geometry.";
++          // The monitors were rearranged (reinitialising re-reads this output's
++          // position, so absolute input follows it), or the output switched
++          // to another mode and got a buffer of that size.
++          const bool layout_changed = VDISPLAY::displayLayoutGeneration() != layout_generation;
++          const bool mode_changed = VDISPLAY::getEvdiBuffer(name) != buffer;
++          if (layout_changed && mode_changed) {
++            BOOST_LOG(info) << "EVDI capture: the output mode and the desktop layout changed; reinitialising once for both.";
 +            return capture_e::reinit;
 +          }
-+          // The output switched to another mode and got a buffer of that size.
-+          if (VDISPLAY::getEvdiBuffer(name) != buffer) {
-+            BOOST_LOG(info) << "EVDI capture: the output mode changed; reinitialising at the new size.";
-+            return capture_e::reinit;
++          if (layout_changed || mode_changed) {
++            const auto seen = std::chrono::steady_clock::now();
++            if (!change_pending) {
++              change_pending = true;
++              change_seen_at = seen;
++            }
++            if (seen - change_seen_at >= (mode_changed ? max_layout_wait : max_mode_wait)) {
++              BOOST_LOG(info) << (mode_changed ? "EVDI capture: the output mode changed; reinitialising at the new size." :
++                                                 "EVDI capture: the desktop layout changed; reinitialising to re-read the input geometry.");
++              return capture_e::reinit;
++            }
++            // The old buffer no longer shows the output: send no new frame
++            // until the reinitialisation. A layout change alone leaves the
++            // picture as it is, so capture goes on while it waits.
++            if (mode_changed) {
++              std::shared_ptr<platf::img_t> img_out;
++              if (!pull_free_image_cb(img_out)) {
++                return capture_e::interrupted;
++              }
++              if (!push_captured_image_cb(std::move(img_out), false)) {
++                return capture_e::ok;
++              }
++              continue;
++            }
 +          }
 +
            std::shared_ptr<platf::img_t> img_out;
            if (!pull_free_image_cb(img_out)) {
              return capture_e::interrupted;
-@@ -1849,6 +1870,8 @@ namespace platf {
+           }
++          // Nothing was drawn since the last copy: report no new frame, like
++          // the other backends do on a timeout. The encoder then repeats the
++          // previous frame at its minimum rate instead of encoding an
++          // identical frame at the full frame rate.
++          if (copied_any && buffer->frame_number() == copied_frame) {
++            if (!push_captured_image_cb(std::move(img_out), false)) {
++              return capture_e::ok;
++            }
++            continue;
++          }
+           const auto t0 = std::chrono::steady_clock::now();
+-          buffer->copy_to(img_out->data, img_out->row_pitch);
++          copied_frame = buffer->copy_to(img_out->data, img_out->row_pitch);
++          copied_any = true;
+           const auto t1 = std::chrono::steady_clock::now();
+           accumulate_capture_metric("evdi", std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+           img_out->frame_timestamp = std::chrono::steady_clock::now();
+@@ -1849,6 +1916,8 @@ namespace platf {
        mem_type_e mem_type;
        std::chrono::nanoseconds delay;
        std::shared_ptr<VDISPLAY::EvdiBuffer> buffer;
