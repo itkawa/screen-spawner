@@ -283,6 +283,10 @@ Fixes I find while building Screen Spawner go to Hermes itself, so everyone who 
 
 * **[MrOz59/Hermes#123](https://github.com/MrOz59/Hermes/pull/123): Hermes finds the connector of an EVDI virtual display.** Hermes looked for the `evdi` driver under the connector's own sysfs entry, which has none, so it never found the virtual monitor's connector and could not activate it. It now reads the driver from the card's device. The maintainer carried it onto the current main in [#128](https://github.com/MrOz59/Hermes/pull/128) together with a CI fix; merged on 15 November 2026.
 
+* **[MrOz59/Hermes#132](https://github.com/MrOz59/Hermes/pull/132): Hermes no longer encodes an unchanged EVDI picture again and again.** The capture loop copied the virtual display and sent it as a new frame on every tick, even when nothing on it had changed, so on an idle desktop the encoder kept working at almost the full frame rate. Hermes now sends a new frame only when the picture changes, and otherwise repeats the last one at its minimum rate. On an idle desktop it encodes 18 instead of 53 frames a second and uses 9% of one CPU thread instead of 22%; with a video playing, about half the load it had before. The mouse in mirrored mode no longer lags. Merged on 16 November 2026.
+
+* **[MrOz59/Hermes#136](https://github.com/MrOz59/Hermes/pull/136): Hermes no longer crashes when you quit it from its Web UI.** After Quit, Hermes answered the browser from a separate thread 5 s later. When shutting down took longer, as closing an EVDI virtual display does on GNOME under Wayland, that thread used the already destroyed web server and Hermes crashed on the way out. The thread now lets go of the answer before the server stops. Merged on 17 November 2026.
+
 ### Next
 
 The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: mirroring at different resolutions, and touch input on GNOME under X11. Once Hermes includes them, Screen Spawner can install the official Hermes packages instead of its own builds.

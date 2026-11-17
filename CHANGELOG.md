@@ -23,6 +23,14 @@ A window and a top bar icon, installed by `install.sh` with a launcher in the ap
 - closing the window keeps the app in the top bar; opening it again from the menu shows the same window;
 - a short journal in `~/.local/state/screen-spawner/app.log`.
 
+### Hermes
+
+The Hermes packages (`0.5.1+ss0.1.1`, rebuilt) carry three more fixes in `patches/evdi-fix.patch`:
+
+- Hermes no longer encodes the same picture again and again: when nothing on the tablet's screen changes, it sends a new frame only at its minimum rate instead of the full frame rate. On an idle desktop Hermes now encodes 18 instead of 53 frames a second and uses 9% of one CPU thread instead of 22%; with a video on the tablet, 21% instead of about 40%. The mouse in mirrored mode no longer lags.
+- Switching between extended and mirrored restarts the video encoder once instead of twice, so the tablet pauses only once.
+- Quitting Hermes from its Web UI no longer crashes it when shutting down takes more than five seconds, as closing the virtual display can on Wayland.
+
 ### Also
 
 - New app icon.
