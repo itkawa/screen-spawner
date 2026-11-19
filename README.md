@@ -287,6 +287,8 @@ Fixes I find while building Screen Spawner go to Hermes itself, so everyone who 
 
 * **[MrOz59/Hermes#136](https://github.com/MrOz59/Hermes/pull/136): Hermes no longer crashes when you quit it from its Web UI.** After Quit, Hermes answered the browser from a separate thread 5 s later. When shutting down took longer, as closing an EVDI virtual display does on GNOME under Wayland, that thread used the already destroyed web server and Hermes crashed on the way out. The thread now lets go of the answer before the server stops. Merged on 17 November 2026.
 
+* **[MrOz59/Hermes#140](https://github.com/MrOz59/Hermes/pull/140): Hermes finds the right EVDI card when there is more than one.** libevdi numbers EVDI devices by their DRM card, but Hermes looked the same number up as a different kind of device, which can be another card. With a second EVDI device, such as a DisplayLink dock, Hermes connected the virtual display on one card and waited for it on the other, and Moonlight got error 503. In the same pull request I added the changelog entries I had forgotten for #132 and #136. Merged on 18 November 2026.
+
 ### Next
 
 The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: mirroring at different resolutions, and touch input on GNOME under X11. Once Hermes includes them, Screen Spawner can install the official Hermes packages instead of its own builds.
