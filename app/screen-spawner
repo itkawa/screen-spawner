@@ -543,7 +543,8 @@ class Mutter:
         reason = None
         for attempt in (1, 2):
             try:
-                self._apply_device_once(connector, mode)
+                # xrandr first on X11; the second attempt asks GNOME itself.
+                self._apply_device_once(connector, mode, xrandr=attempt == 1)
             except GLib.Error as e:
                 # A stale serial is refused when the monitors changed in between.
                 log(f"{connector} -> {mode}, attempt {attempt}: GNOME refused: {e.message}")
@@ -560,6 +561,59 @@ class Mutter:
                 f"{self.layout_of(connector, self.state()[2])}")
         self.restore(before)
         raise HermesError(f"GNOME did not switch the screen: {reason}. The monitors are as they were.")
+
+    @staticmethod
+    def _apply_with_xrandr(config, by_connector, logical):
+        """On X11, set `config` with xrandr in two steps; GNOME reads the new
+        layout from the X server. GNOME (and a plain xrandr call) shrinks the X
+        screen and moves the monitors in one go, so a monitor that sits outside
+        the smaller screen for a moment, such as the HDMI one when a device
+        between them becomes a mirror, is switched off and on. On recent Intel
+        graphics a monitor going off or on also restarts the laptop panel: up to
+        three blinks of about 1.3 s each. So the monitors move first within the
+        current screen size, and the screen shrinks after that. False when this
+        is not X11, xrandr is missing or refuses; the caller then asks GNOME."""
+        if os.environ.get("XDG_SESSION_TYPE") != "x11" or not shutil.which("xrandr"):
+            return False
+        outputs = []
+        width = height = 0
+        for x, y, scale, transform, primary, entries in config:
+            if scale != 1.0 or transform != 0:
+                return False
+            for index, (name, mode_id, _props) in enumerate(entries):
+                mode = next((m for m in by_connector[name][1] if m[0] == mode_id), None)
+                if mode is None:
+                    return False
+                outputs += ["--output", name, "--mode", f"{mode[1]}x{mode[2]}",
+                            "--rate", f"{mode[3]:.2f}", "--pos", f"{x}x{y}"]
+                if primary and index == 0:
+                    outputs.append("--primary")
+                width, height = max(width, x + mode[1]), max(height, y + mode[2])
+        try:
+            current = subprocess.run(["xrandr", "--current"], capture_output=True,
+                                     text=True, timeout=10).stdout
+            size = current.split("current ", 1)[1].split(",", 1)[0].split(" x ")
+            screen = (int(size[0]), int(size[1]))
+        except (OSError, subprocess.TimeoutExpired, IndexError, ValueError) as e:
+            log(f"xrandr: no current screen size: {e}")
+            return False
+        log("layout before: " + ", ".join(
+            f"{'+'.join(s[0] for s in specs)} at {x},{y}" for x, y, *_r, specs, _p in logical))
+        steps = [["xrandr", "--fb", f"{max(width, screen[0])}x{max(height, screen[1])}"] + outputs]
+        if (width, height) != (max(width, screen[0]), max(height, screen[1])):
+            steps.append(["xrandr", "--fb", f"{width}x{height}"])
+        for command in steps:
+            started = time.monotonic()
+            try:
+                done = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                log(f"xrandr failed: {e}")
+                return False
+            log(f"xrandr {' '.join(command[1:3])}...: {time.monotonic() - started:.2f} s")
+            if done.returncode != 0:
+                log(f"xrandr refused ({done.returncode}): {done.stderr.strip()[:200]}")
+                return False
+        return True
 
     @staticmethod
     def plain_reason(message):
@@ -601,7 +655,7 @@ class Mutter:
         except GLib.Error as e:
             log(f"could not restore the layout: {e.message}")
 
-    def _apply_device_once(self, connector, mode):
+    def _apply_device_once(self, connector, mode, xrandr=True):
         serial, monitors, logical, props = self.state()
         by_connector = {m[0][0]: m for m in monitors}
         if connector not in by_connector:
@@ -666,6 +720,8 @@ class Mutter:
 
         config = [(int(x), int(y), float(sc), int(t), bool(p), entries)
                   for x, y, sc, t, p, entries in result]
+        if xrandr and self._apply_with_xrandr(config, by_connector, logical):
+            return
         # Method 1: temporary, like a session's own change; GNOME does not ask to keep it.
         self._call("ApplyMonitorsConfig", GLib.Variant(
             "(uua(iiduba(ssa{sv}))a{sv})", (serial, 1, config, {})))
