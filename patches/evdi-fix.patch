@@ -72,6 +72,121 @@ index ecc40487..54d1a01d 100644
      server.stop();
  
      tcp.join();
+diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
+index 3dc307ad..0882620a 100644
+--- a/src/nvhttp.cpp
++++ b/src/nvhttp.cpp
+@@ -64,6 +64,36 @@ namespace nvhttp {
+ #endif
+   }
+ 
++  /**
++   * @brief With an output per client, whether clients other than this one are
++   *        still streaming the shared desktop.
++   */
++  static bool other_multi_output_clients_streaming(const std::string &client_uuid) {
++#ifdef __linux__
++    return config::video.hermes_kms_multi_output &&
++           (config::video.virtual_display_backend == "hermes_kms" ||
++            config::video.virtual_display_backend == "evdi") &&
++           std::ranges::any_of(rtsp_stream::get_all_session_uuids(), [&](const std::string &uuid) {
++             return uuid != client_uuid;
++           });
++#else
++    return false;
++#endif
++  }
++
++  /**
++   * @brief Whether the shared app runs only for other clients.
++   *
++   * Moonlight checks serverinfo after it asks to quit; if an app still runs
++   * there, it reports that the session was started on another device. A
++   * client without a session of its own is told nothing runs; launching the
++   * same app again still gives it its own output.
++   */
++  static bool app_runs_only_for_other_clients(const std::string &client_uuid) {
++    return other_multi_output_clients_streaming(client_uuid) &&
++           !rtsp_stream::find_session(client_uuid);
++  }
++
+   struct client_t {
+     std::vector<p_named_cert_t> named_devices;
+   };
+@@ -1076,9 +1106,14 @@ namespace nvhttp {
+       if (config::input.enable_input_only_mode && current_appid != proc::input_only_app_id) {
+         current_appid = 0;
+       }
++      const bool hide_running_app = !isolated_sessions && app_runs_only_for_other_clients(named_cert_p->uuid);
++      if (hide_running_app) {
++        current_appid = 0;
++      }
+       tree.put("root.currentgame", current_appid);
+       tree.put(
+         "root.currentgameuuid",
++        hide_running_app ? std::string {} :
+         isolated_sessions ?
+           proc::proc.running_app_uuid_for_client(named_cert_p->uuid) :
+           proc::proc.get_running_app_uuid()
+@@ -1496,7 +1531,8 @@ namespace nvhttp {
+ #ifdef __linux__
+     if (!is_input_only &&
+         !isolated_sessions &&
+-        config::video.virtual_display_backend == "hermes_kms" &&
++        (config::video.virtual_display_backend == "hermes_kms" ||
++         config::video.virtual_display_backend == "evdi") &&
+         config::video.hermes_kms_multi_output &&
+         (proc::proc.virtual_display || launch_session->virtual_display || config::video.headless_mode) &&
+         !launch_session->session_scoped_virtual_display) {
+@@ -1627,7 +1663,16 @@ namespace nvhttp {
+       }
+     }
+ #ifndef _WIN32
+-    else if (!isolated_sessions && no_active_sessions && proc::proc.virtual_display && !proc::proc.display_name.empty()) {
++    // With an output per client, the paused app's display left with the last
++    // client; the block further down gives this client a new one. Resizing
++    // and probing the old one here only fails, and the client gets a 503.
++    else if (!isolated_sessions && no_active_sessions && proc::proc.virtual_display && !proc::proc.display_name.empty()
++#ifdef __linux__
++             && !(config::video.hermes_kms_multi_output &&
++                  (config::video.virtual_display_backend == "hermes_kms" ||
++                   config::video.virtual_display_backend == "evdi"))
++#endif
++    ) {
+       // A resumed app keeps its virtual display, but every client brings its
+       // own mode. Without this, the first client's geometry outlives it: A
+       // streams at 1440p and disconnects, B resumes the same app at 1080p and
+@@ -1682,7 +1727,8 @@ namespace nvhttp {
+     }
+ 
+ #ifdef __linux__
+-    if (config::video.virtual_display_backend == "hermes_kms" &&
++    if ((config::video.virtual_display_backend == "hermes_kms" ||
++         config::video.virtual_display_backend == "evdi") &&
+         !isolated_sessions &&
+         config::video.hermes_kms_multi_output &&
+         (proc::proc.virtual_display || launch_session->virtual_display || config::video.headless_mode)) {
+@@ -1745,10 +1791,20 @@ namespace nvhttp {
+     tree.put("root.cancel", 1);
+     tree.put("root.<xmlattr>.status_code", 200);
+ 
++    BOOST_LOG(info) << "Client [" << named_cert_p->name << "] asked to quit the app.";
+     if (experimental_isolated_sessions_enabled()) {
+       rtsp_stream::cancel_pending_launch(named_cert_p->uuid);
+       rtsp_stream::terminate_session(named_cert_p->uuid);
+       proc::proc.terminate_isolated_client(named_cert_p->uuid);
++    } else if (other_multi_output_clients_streaming(named_cert_p->uuid)) {
++      // With an output per client, other clients are still using the shared
++      // desktop: end only this client's session and its display, and leave
++      // the app running for the rest. The client's own session has usually
++      // ended already when Moonlight sends this, so count the others. The
++      // last client to quit stops the app.
++      BOOST_LOG(info) << "Other clients are still connected; ending only this client's session.";
++      rtsp_stream::cancel_pending_launch(named_cert_p->uuid);
++      rtsp_stream::terminate_session(named_cert_p->uuid);
+     } else {
+       rtsp_stream::terminate_sessions();
+       if (proc::proc.running() > 0) {
 diff --git a/src/platform/linux/kmsgrab.cpp b/src/platform/linux/kmsgrab.cpp
 index 89987125..677fe9bd 100644
 --- a/src/platform/linux/kmsgrab.cpp
@@ -188,7 +303,7 @@ index 89987125..677fe9bd 100644
  
      class display_vram_t: public display_t {
 diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
-index 84617d2e..3d06c07c 100644
+index 84617d2e..9e2fa90f 100644
 --- a/src/platform/linux/virtual_display.cpp
 +++ b/src/platform/linux/virtual_display.cpp
 @@ -153,7 +153,8 @@ namespace VDISPLAY {
@@ -201,7 +316,26 @@ index 84617d2e..3d06c07c 100644
    typedef void (*fn_evdi_disconnect)(evdi_handle handle);
    typedef void (*fn_evdi_grab_pixels)(evdi_handle handle, struct evdi_rect *rects, int *num_rects);
    typedef void (*fn_evdi_register_buffer)(evdi_handle handle, struct evdi_buffer buffer);
-@@ -4519,6 +4520,37 @@ namespace VDISPLAY {
+@@ -1599,6 +1600,7 @@ namespace VDISPLAY {
+     std::string name;
+     std::string guid_str;
+     std::string client_name;
++    std::string client_uid;  // the paired client's UUID, for the EDID serial
+     uint32_t width;
+     uint32_t height;
+     uint32_t fps;
+@@ -2851,6 +2853,10 @@ namespace VDISPLAY {
+   // org.gnome.Mutter.DisplayConfig over D-Bus. We talk to it via `gdbus` (always
+   // present on GNOME) to avoid a libdbus build dependency.
+   //
++  /// The EDID manufacturer of Hermes' virtual displays: bytes 0x06 0x4C,
++  /// which decode to "ARL". GNOME reports it as the monitor's vendor.
++  static constexpr const char *VIRTUAL_EDID_VENDOR = "ARL";
++
+   // This backend is intentionally conservative: Mutter typically adopts the
+   // HERMES-1 connector after Hermes connects it for a stream, so the critical
+   // step is to *verify* that the virtual output is present and active in
+@@ -4519,6 +4525,86 @@ namespace VDISPLAY {
  
      static void unwatch_layout() {}
  #endif
@@ -236,13 +370,116 @@ index 84617d2e..3d06c07c 100644
 +      }
 +      return false;
 +    }
++
++    /**
++     * The current mode of every lit monitor, the primary one first, leaving
++     * out virtual displays Hermes made (they carry its EDID vendor). A virtual
++     * output offers these sizes so GNOME can mirror any of them onto it.
++     */
++    static std::vector<std::pair<uint32_t, uint32_t>> monitor_modes() {
++      std::vector<std::pair<uint32_t, uint32_t>> modes;
++      // Asked while a display is being created, with the display lock held:
++      // GNOME can be busy for many seconds rebuilding its layout after another
++      // output came or went, and the client gives up waiting. A size missing
++      // from the EDID only costs mirroring that monitor.
++      static const char *bounded_state_command =
++        "gdbus call --session --timeout 2 "
++        "--dest org.gnome.Mutter.DisplayConfig "
++        "--object-path /org/gnome/Mutter/DisplayConfig "
++        "--method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null";
++      state_t state;
++      if (!parse_current_state(command_output(bounded_state_command), state)) {
++        return modes;
++      }
++      const auto add = [&](const std::string &connector) {
++        const auto *monitor = state.find_monitor(connector);
++        const auto mode_id = state.current_mode.find(connector);
++        if (!monitor || monitor->vendor == VIRTUAL_EDID_VENDOR || mode_id == state.current_mode.end()) {
++          return;
++        }
++        for (const auto &mode : monitor->modes) {
++          if (mode.id != mode_id->second || mode.width <= 0 || mode.height <= 0) {
++            continue;
++          }
++          const std::pair<uint32_t, uint32_t> size {mode.width, mode.height};
++          if (std::find(modes.begin(), modes.end(), size) == modes.end()) {
++            modes.push_back(size);
++          }
++        }
++      };
++      for (const auto &lm : state.logical_monitors) {
++        if (lm.primary == "true") {
++          std::for_each(lm.connectors.begin(), lm.connectors.end(), add);
++        }
++      }
++      for (const auto &lm : state.logical_monitors) {
++        if (lm.primary != "true") {
++          std::for_each(lm.connectors.begin(), lm.connectors.end(), add);
++        }
++      }
++      return modes;
++    }
    }  // namespace mutter
  
    EvdiBuffer::EvdiBuffer(uint32_t width, uint32_t height):
-@@ -5307,6 +5339,37 @@ namespace VDISPLAY {
+@@ -5096,10 +5182,22 @@ namespace VDISPLAY {
+ 
+   constexpr int EVDI_DEVICE_SEARCH_LIMIT = 64;
+ 
++  // Called with vdisplay_mutex held. EVDI_AVAILABLE only means the node exists
++  // and can be opened; a device that already carries another session's display
++  // reports it too, so skip the ones this process has connected.
++  static bool evdi_device_in_use(int device) {
++    for (const auto &[guid, display] : virtual_displays) {
++      if (display.using_evdi && display.device_index == device) {
++        return true;
++      }
++    }
++    return false;
++  }
++
+   static int find_available_evdi_device() {
+     // First use an already-created EVDI device, if one is available.
+     for (int i = 0; i < EVDI_DEVICE_SEARCH_LIMIT; i++) {
+-      if (evdi.check_device(i) == EVDI_AVAILABLE) {
++      if (!evdi_device_in_use(i) && evdi.check_device(i) == EVDI_AVAILABLE) {
+         return i;
+       }
+     }
+@@ -5123,7 +5221,7 @@ namespace VDISPLAY {
+     BOOST_LOG(info) << "[VDISPLAY] Added EVDI device; waiting for its device index.";
+     for (int attempt = 0; attempt < 125; ++attempt) {
+       for (int i = 0; i < EVDI_DEVICE_SEARCH_LIMIT; ++i) {
+-        if (evdi.check_device(i) == EVDI_AVAILABLE) {
++        if (!evdi_device_in_use(i) && evdi.check_device(i) == EVDI_AVAILABLE) {
+           BOOST_LOG(info) << "[VDISPLAY] EVDI device available at index " << i;
+           return i;
+         }
+@@ -5140,6 +5238,19 @@ namespace VDISPLAY {
+   // card0 is usually the physical GPU, even when the first EVDI device is 0.
+   // Discover the card through sysfs instead of assuming they are the same.
+   static int find_evdi_drm_card(int device_index) {
++    // libevdi numbers devices by their DRM card: evdi_check_device(N) and
++    // evdi_open(N) use /dev/dri/cardN. That index is not the N of the evdi.N
++    // platform device - the first EVDI device is usually card1, and a second
++    // one added later can become card0. Use the card the handle was opened on.
++    {
++      std::error_code ec;
++      const fs::path card = "/sys/class/drm/card" + std::to_string(device_index);
++      const auto module = fs::read_symlink(card / "device" / "driver" / "module", ec).filename().string();
++      if (!ec && module == "evdi") {
++        return device_index;
++      }
++    }
++
+     const auto expected_device = "evdi." + std::to_string(device_index);
+     std::vector<int> evdi_cards;
+ 
+@@ -5307,7 +5418,128 @@ namespace VDISPLAY {
      dtd[17] = 0x1E; // Digital separate sync, positive H and V
    }
  
+-  static unsigned char *generate_edid_for_resolution(uint32_t width, uint32_t height, uint32_t refresh_rate) {
 +  /**
 +   * The mode of the primary X11 monitor. It is offered as a second EDID mode,
 +   * because GNOME mirrors only between outputs that share a mode size.
@@ -274,32 +511,234 @@ index 84617d2e..3d06c07c 100644
 +    return false;
 +  }
 +
-   static unsigned char *generate_edid_for_resolution(uint32_t width, uint32_t height, uint32_t refresh_rate) {
++  /**
++   * The display name in the EDID: the client's name in printable ASCII, cut
++   * to the 13 characters the descriptor holds, so GNOME Settings shows which
++   * device a virtual display belongs to. Other characters become spaces;
++   * a name with nothing printable left falls back to "Hermes Screen".
++   */
++  static std::string edid_display_name(const std::string &client_name) {
++    std::string name;
++    for (const unsigned char c : client_name) {
++      if (name.size() == 13) {
++        break;
++      }
++      name += (c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : ' ';
++    }
++    while (!name.empty() && name.back() == ' ') {
++      name.pop_back();
++    }
++    while (!name.empty() && name.front() == ' ') {
++      name.erase(name.begin());
++    }
++    return name.empty() ? std::string {"Hermes Screen"} : name;
++  }
++
++  /**
++   * The EDID serial number for a client: FNV-1a over its uppercase UUID, never
++   * 0 (which means "no serial"). It stays the same for a device across
++   * sessions, so GNOME keeps each device's place in the layout and tells two
++   * devices with the same name apart. Screen Spawner computes the same value.
++   */
++  static uint32_t edid_serial(const std::string &client_uid) {
++    uint32_t hash = 2166136261u;
++    for (const unsigned char c : client_uid) {
++      hash ^= static_cast<unsigned char>(std::toupper(c));
++      hash *= 16777619u;
++    }
++    return hash ? hash : 1;
++  }
++
++  /**
++   * The current size of every lit X11 monitor, the primary one first, leaving
++   * out EVDI outputs. Read from the X server, which answers at once, unlike
++   * GNOME while it rebuilds its layout.
++   */
++  static std::vector<std::pair<uint32_t, uint32_t>> x11_monitor_modes() {
++    std::vector<std::string> evdi_outputs;
++    for (int card = 0; card < 64; ++card) {
++      if (auto name = evdi_connector_name(card); !name.empty()) {
++        evdi_outputs.push_back(std::move(name));
++      }
++    }
++    std::vector<std::pair<uint32_t, uint32_t>> primary;
++    std::vector<std::pair<uint32_t, uint32_t>> others;
++    std::istringstream lines {mutter::command_output("xrandr --current 2>/dev/null")};
++    std::string line;
++    while (std::getline(lines, line)) {
++      const auto connected = line.find(" connected ");
++      if (connected == std::string::npos || line.empty() || line[0] == ' ') {
++        continue;
++      }
++      const auto output = line.substr(0, line.find(' '));
++      // X11 names an output of a second GPU with a suffix: DVI-I-1 is DVI-I-1-1.
++      const bool is_evdi = std::any_of(evdi_outputs.begin(), evdi_outputs.end(), [&](const std::string &c) {
++        return output == c || output.rfind(c + "-", 0) == 0;
++      });
++      if (is_evdi) {
++        continue;
++      }
++      auto rest = line.substr(connected + 11);
++      const bool is_primary = rest.rfind("primary ", 0) == 0;
++      if (is_primary) {
++        rest = rest.substr(8);
++      }
++      unsigned int w = 0;
++      unsigned int h = 0;
++      if (std::sscanf(rest.c_str(), "%ux%u+", &w, &h) != 2 || w == 0 || h == 0) {
++        continue;   // connected but off
++      }
++      const std::pair<uint32_t, uint32_t> size {w, h};
++      auto &list = is_primary ? primary : others;
++      if (std::find(primary.begin(), primary.end(), size) == primary.end() &&
++          std::find(others.begin(), others.end(), size) == others.end()) {
++        list.push_back(size);
++      }
++    }
++    primary.insert(primary.end(), others.begin(), others.end());
++    return primary;
++  }
++
++  static unsigned char *generate_edid_for_resolution(uint32_t width, uint32_t height, uint32_t refresh_rate,
++                                                     const std::string &client_name = {},
++                                                     const std::string &client_uid = {}) {
      static unsigned char edid[256]; // Support for 1 extension block
      memset(edid, 0, sizeof(edid));
-@@ -5381,9 +5444,18 @@ namespace VDISPLAY {
+ 
+@@ -5324,8 +5556,10 @@ namespace VDISPLAY {
+     // Product code
+     edid[10] = 0x01; edid[11] = 0x00;
+ 
+-    // Serial number
+-    edid[12] = 0x01; edid[13] = 0x00; edid[14] = 0x00; edid[15] = 0x00;
++    // Serial number: one per client, little-endian
++    const uint32_t serial = client_uid.empty() ? 1 : edid_serial(client_uid);
++    edid[12] = serial & 0xFF; edid[13] = (serial >> 8) & 0xFF;
++    edid[14] = (serial >> 16) & 0xFF; edid[15] = (serial >> 24) & 0xFF;
+ 
+     // Week and year of manufacture (week 1, 2024)
+     edid[16] = 0x01; edid[17] = 0x22;
+@@ -5364,11 +5598,12 @@ namespace VDISPLAY {
+ 
+     // Descriptor 2: Display name
+     edid[72] = 0x00; edid[73] = 0x00; edid[74] = 0x00; edid[75] = 0xFC; edid[76] = 0x00;
+-    const char *name = "APOLLO VDISP";
+-    for (int i = 0; i < 13 && name[i]; i++) {
+-      edid[77 + i] = name[i];
++    // The client's name; a descriptor shorter than 13 characters ends with a
++    // newline and is padded with spaces.
++    const std::string name = client_name.empty() ? std::string {"APOLLO VDISP"} : edid_display_name(client_name);
++    for (int i = 0; i < 13; i++) {
++      edid[77 + i] = i < static_cast<int>(name.size()) ? name[i] : (i == static_cast<int>(name.size()) ? '\n' : ' ');
+     }
+-    edid[89] = '\n';
+ 
+     // Descriptor 3: Display range limits
+     edid[90] = 0x00; edid[91] = 0x00; edid[92] = 0x00; edid[93] = 0xFD; edid[94] = 0x00;
+@@ -5381,19 +5616,63 @@ namespace VDISPLAY {
      edid[101] = 0x0A; // Newline padding
      for (int i = 102; i < 108; i++) edid[i] = 0x20; // Space padding
  
 -    // Descriptor 4: Dummy/unused
 -    edid[108] = 0x00; edid[109] = 0x00; edid[110] = 0x00; edid[111] = 0x10; edid[112] = 0x00;
 -    for (int i = 113; i < 126; i++) edid[i] = 0x20;
-+    // Descriptor 4: the primary monitor's mode, so the desktop can be
-+    // mirrored onto this output; otherwise dummy/unused
-+    uint32_t mirror_width = 0;
-+    uint32_t mirror_height = 0;
-+    if (primary_monitor_mode(mirror_width, mirror_height) && (mirror_width != width || mirror_height != height)) {
-+      create_detailed_timing_descriptor(&edid[108], mirror_width, mirror_height, 60);
-+      BOOST_LOG(info) << "[VDISPLAY] EDID also offers " << mirror_width << 'x' << mirror_height
-+                      << " for mirroring the primary monitor";
++    // The sizes of the monitors, so GNOME can mirror any of them onto this
++    // output: it mirrors only between outputs that share a mode size. The
++    // primary monitor comes first and takes descriptor 4; the others go to
++    // detailed timings in the extension block.
++    std::vector<std::pair<uint32_t, uint32_t>> mirror_modes;
++    {
++      std::vector<std::pair<uint32_t, uint32_t>> found;
++      if (window_system == window_system_e::X11) {
++        found = x11_monitor_modes();
++      } else if (mutter::available()) {
++        found = mutter::monitor_modes();
++      }
++      // Not again through GNOME: when it did not answer in time, it would not now.
++      if (found.empty() && window_system == window_system_e::X11) {
++        uint32_t primary_width = 0;
++        uint32_t primary_height = 0;
++        if (primary_monitor_mode(primary_width, primary_height)) {
++          found.emplace_back(primary_width, primary_height);
++        }
++      }
++      for (const auto &size : found) {
++        if (size.first != width || size.second != height) {
++          mirror_modes.push_back(size);
++        }
++      }
++    }
++    // Descriptor 4: the first of them; otherwise dummy/unused
++    if (!mirror_modes.empty()) {
++      create_detailed_timing_descriptor(&edid[108], mirror_modes.front().first, mirror_modes.front().second, 60);
 +    } else {
 +      edid[108] = 0x00; edid[109] = 0x00; edid[110] = 0x00; edid[111] = 0x10; edid[112] = 0x00;
 +      for (int i = 113; i < 126; i++) edid[i] = 0x20;
 +    }
  
-     // Extension flag: 1 extension block (for resolutions > 1080p)
-     bool needs_extension = (width > 1920 || height > 1080);
-@@ -5437,11 +5509,28 @@ namespace VDISPLAY {
+-    // Extension flag: 1 extension block (for resolutions > 1080p)
+-    bool needs_extension = (width > 1920 || height > 1080);
++    // Extension flag: 1 extension block, for resolutions > 1080p or for more
++    // monitor sizes than descriptor 4 holds
++    bool needs_extension = (width > 1920 || height > 1080) || mirror_modes.size() > 1;
+     edid[126] = needs_extension ? 0x01 : 0x00;
+ 
+     // Calculate checksum for block 0
+     calculate_edid_checksum(edid, 128);
+ 
+-    // Block 1: CEA-861 Extension (for 4K support)
+-    if (needs_extension) {
++    // Block 1: CEA-861 Extension. Only a display above 1080p gets the video
++    // and HDMI data blocks; one that needs the block just for more monitor
++    // sizes gets detailed timings alone, so it does not start offering 4K.
++    const bool large_display = width > 1920 || height > 1080;
++    if (needs_extension && !large_display) {
++      edid[128] = 0x02; // CEA extension tag
++      edid[129] = 0x03; // Revision 3
++      edid[130] = 0x04; // Detailed timings start right after the header
++      edid[131] = 0x00; // No native formats, no YCbCr
++      int dtd = 132;
++      for (size_t i = 1; i < mirror_modes.size() && dtd + 18 <= 255; ++i, dtd += 18) {
++        create_detailed_timing_descriptor(&edid[dtd], mirror_modes[i].first, mirror_modes[i].second, 60);
++      }
++      calculate_edid_checksum(&edid[128], 128);
++    } else if (needs_extension) {
+       edid[128] = 0x02; // CEA extension tag
+       edid[129] = 0x03; // Revision 3
+       edid[130] = 0x18; // DTD offset (24 bytes for data blocks)
+@@ -5419,15 +5698,29 @@ namespace VDISPLAY {
+       edid[146] = 0x00; // Supports AI, DC 48/36/30 bit
+       edid[147] = 0x78; // Max TMDS clock / 5 MHz = 600 MHz
+ 
+-      // Detailed Timing Descriptor for 4K if needed
++      // Detailed timings from byte 152: 4K if needed, then the other monitor
++      // sizes, as many as fit before the checksum
++      int dtd = 152;
+       if (width >= 3840) {
+-        create_detailed_timing_descriptor(&edid[152], 3840, 2160, 60);
++        create_detailed_timing_descriptor(&edid[dtd], 3840, 2160, 60);
++        dtd += 18;
++      }
++      for (size_t i = 1; i < mirror_modes.size() && dtd + 18 <= 255; ++i, dtd += 18) {
++        create_detailed_timing_descriptor(&edid[dtd], mirror_modes[i].first, mirror_modes[i].second, 60);
+       }
+ 
+       // Calculate checksum for block 1
+       calculate_edid_checksum(&edid[128], 128);
+     }
+ 
++    if (!mirror_modes.empty()) {
++      std::string sizes;
++      for (const auto &size : mirror_modes) {
++        sizes += (sizes.empty() ? "" : ", ") + std::to_string(size.first) + 'x' + std::to_string(size.second);
++      }
++      BOOST_LOG(info) << "[VDISPLAY] EDID also offers " << sizes << " for mirroring the monitors";
++    }
++    BOOST_LOG(info) << "[VDISPLAY] EDID name \"" << name << "\", serial 0x" << std::hex << serial << std::dec;
+     return edid;
+   }
+ 
+@@ -5437,11 +5730,28 @@ namespace VDISPLAY {
    static void evdi_events_loop() {
      evdi_event_context event_context {};
      event_context.update_ready_handler = [](int, void *) {};
@@ -328,7 +767,7 @@ index 84617d2e..3d06c07c 100644
  
      while (evdi_events_running) {
        {
-@@ -5463,18 +5552,60 @@ namespace VDISPLAY {
+@@ -5463,18 +5773,60 @@ namespace VDISPLAY {
            pollfd poll_fd {};
            poll_fd.fd = evdi.get_event_ready(display.handle);
            poll_fd.events = POLLIN;
@@ -394,7 +833,7 @@ index 84617d2e..3d06c07c 100644
            const auto refresh_rate = std::max<uint32_t>(display.fps, 1);
            const auto session_interval = std::chrono::microseconds {1000000 / refresh_rate};
            next_grab_by_handle[display.handle] = now + std::clamp(session_interval, min_grab_interval, max_grab_interval);
-@@ -5487,6 +5618,9 @@ namespace VDISPLAY {
+@@ -5487,6 +5839,9 @@ namespace VDISPLAY {
              ++it;
            }
          }
@@ -404,7 +843,25 @@ index 84617d2e..3d06c07c 100644
        }
  
        // A 1 ms pump keeps pageflip-to-capture wakeup below one millisecond
-@@ -5948,7 +6082,7 @@ namespace VDISPLAY {
+@@ -5784,6 +6139,7 @@ namespace VDISPLAY {
+     vdinfo.name = display_name;
+     vdinfo.guid_str = guid_str;
+     vdinfo.client_name = s_client_name ? s_client_name : "";
++    vdinfo.client_uid = s_client_uid ? s_client_uid : "";
+     vdinfo.width = width;
+     vdinfo.height = height;
+     vdinfo.fps = fps;
+@@ -5941,14 +6297,14 @@ namespace VDISPLAY {
+         evdi_handle handle = evdi.open(device);
+         if (handle) {
+           // Generate EDID for requested resolution
+-          unsigned char *edid = generate_edid_for_resolution(width, height, fps_hz);
++          unsigned char *edid = generate_edid_for_resolution(width, height, fps_hz, vdinfo.client_name, vdinfo.client_uid);
+ 
+-          // Determine EDID size (128 for base, 256 with extension for 4K)
+-          unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
++          // 128 bytes for the base block, 256 with the extension block
++          unsigned int edid_size = edid[126] ? 256 : 128;
  
            // Connect with EDID (no area limit)
            BOOST_LOG(info) << "[VDISPLAY] Connecting with " << edid_size << "-byte EDID for " << width << "x" << height;
@@ -413,16 +870,21 @@ index 84617d2e..3d06c07c 100644
  
            // The DRM node is added asynchronously after connect(). Poll at a
            // short interval: this is on the stream-start critical path, so the
-@@ -6154,7 +6288,7 @@ namespace VDISPLAY {
-           unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz);
-           unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
+@@ -6151,10 +6507,10 @@ namespace VDISPLAY {
+         if (vdinfo.using_evdi && vdinfo.handle) {
+           // Reconnect with new EDID for new resolution
+           evdi.disconnect(vdinfo.handle);
+-          unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz);
+-          unsigned int edid_size = (width > 1920 || height > 1080) ? 256 : 128;
++          unsigned char *edid = generate_edid_for_resolution(width, height, refresh_hz, vdinfo.client_name, vdinfo.client_uid);
++          unsigned int edid_size = edid[126] ? 256 : 128;
            BOOST_LOG(info) << "[VDISPLAY] Reconnecting with " << edid_size << "-byte EDID for " << width << "x" << height;
 -          evdi.connect(vdinfo.handle, edid, edid_size, 0);
 +          evdi.connect(vdinfo.handle, edid, edid_size, 0, 0);
          } else if (vdinfo.using_hermes_kms && vdinfo.drm_fd >= 0) {
            if (!hermes_kms::set_output(vdinfo.drm_fd, true, width, height, refresh_hz, vdinfo.session_id)) {
              return -1;
-@@ -6212,7 +6346,8 @@ namespace VDISPLAY {
+@@ -6212,7 +6568,8 @@ namespace VDISPLAY {
            continue;
          }
          std::error_code ec;
@@ -432,7 +894,7 @@ index 84617d2e..3d06c07c 100644
          if (!ec && module == "evdi") {
            return name.substr(prefix.size());
          }
-@@ -6475,6 +6610,69 @@ namespace VDISPLAY {
+@@ -6475,6 +6832,69 @@ namespace VDISPLAY {
  #endif
    }
  
@@ -502,7 +964,7 @@ index 84617d2e..3d06c07c 100644
    bool activateVirtualDisplayOutput(const std::string &displayName) {
      // KWin is configured when the display is created - enabled, placed and
      // driven at the requested mode in one kscreen-doctor transaction - so
-@@ -6590,6 +6788,52 @@ namespace VDISPLAY {
+@@ -6590,6 +7010,52 @@ namespace VDISPLAY {
      }
  
      BOOST_LOG(info) << "[VDISPLAY] Activated X11 virtual output " << connector;
@@ -573,4 +1035,46 @@ index d37f9aed..90f488b8 100644
 +
    /** Query the active scanout geometry. @return true on success. */
    bool hermesKmsCaptureSize(int render_fd, int &width, int &height);
+ 
+diff --git a/src/process.cpp b/src/process.cpp
+index 969dd75e..1029c001 100644
+--- a/src/process.cpp
++++ b/src/process.cpp
+@@ -836,9 +836,11 @@ namespace proc {
+     (void) session_owner_uid;
+     return 0;
+ #else
+-    if (config::video.virtual_display_backend != "hermes_kms" ||
+-        (!config::video.hermes_kms_multi_output &&
+-         !config::video.hermes_kms_isolated_sessions)) {
++    const bool multi_output_backend =
++      config::video.virtual_display_backend == "hermes_kms" ||
++      config::video.virtual_display_backend == "evdi";
++    if (!(multi_output_backend && config::video.hermes_kms_multi_output) &&
++        !(config::video.virtual_display_backend == "hermes_kms" && config::video.hermes_kms_isolated_sessions)) {
+       return 0;
+     }
+ 
+@@ -1998,7 +2000,8 @@ namespace proc {
+     bool session_scoped_display_prepared = false;
+ #ifndef _WIN32
+     if (needs_virtual_display &&
+-        config::video.virtual_display_backend == "hermes_kms" &&
++        (config::video.virtual_display_backend == "hermes_kms" ||
++         config::video.virtual_display_backend == "evdi") &&
+         config::video.hermes_kms_multi_output) {
+       if (const int result = prepare_session_virtual_display(launch_session, false); result != 0) {
+         return result;
+@@ -2006,7 +2009,11 @@ namespace proc {
+       session_scoped_display_prepared = true;
+       this->virtual_display = true;
+       this->display_name = launch_session->display_name;
+-      config::video.output_name = display_device::map_display_name(this->display_name);
++      // As on the shared path below: map_display_name() resolves a device id
++      // on Windows but returns an empty string on Linux, where the display
++      // name itself is what capture looks up.
++      auto mapped_name = display_device::map_display_name(this->display_name);
++      config::video.output_name = mapped_name.empty() ? this->display_name : std::move(mapped_name);
+     }
+ #endif
  
