@@ -1086,11 +1086,9 @@ class Window(Gtk.ApplicationWindow):
         for choice, button in self._shared_buttons.items():
             button.connect("toggled", self.on_shared_mode, choice)
             shared.add(button)
-        outer.add(self.section("Display", shared))
 
         devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.device_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        self.device_list.get_style_context().add_class("frame")
         self.pair_button = Gtk.Button(label="Pair a device…", halign=Gtk.Align.START)
         self.pair_button.connect("clicked", self.on_pair)
         devices_hint = Gtk.Label(
@@ -1100,8 +1098,6 @@ class Window(Gtk.ApplicationWindow):
         devices_hint.get_style_context().add_class("dim-label")
         devices.add(self.device_list)
         devices.add(devices_hint)
-        bottom_row = Gtk.Box(spacing=12)
-        bottom_row.pack_start(self.pair_button, False, False, 0)
         # How many devices can connect at the same time: the EVDI devices the
         # driver makes when the computer starts.
         slots = Gtk.Box(spacing=6)
@@ -1116,9 +1112,24 @@ class Window(Gtk.ApplicationWindow):
         self.slots_note = Gtk.Label(xalign=0)
         self.slots_note.get_style_context().add_class("dim-label")
         slots.pack_start(self.slots_note, False, False, 0)
-        bottom_row.pack_end(slots, False, False, 0)
-        devices.add(bottom_row)
-        outer.add(self.section("Devices", devices))
+
+        # One frame for everything about what the devices show: the shared
+        # mode and each device's own; pairing and how many devices at once in
+        # one row below it, each at its edge.
+        display = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, border_width=10)
+        display.add(shared)
+        display.add(Gtk.Separator())
+        devices_title = Gtk.Label(xalign=0)
+        devices_title.set_markup("<b>Devices</b>")
+        display.add(devices_title)
+        display.add(devices)
+        below = Gtk.Box(spacing=12)
+        below.pack_start(self.pair_button, False, False, 0)
+        below.pack_end(slots, False, False, 0)
+        display_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        display_section.add(self.framed(display))
+        display_section.add(below)
+        outer.add(self.section("Display", display_section))
 
         login = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, border_width=10)
         self.autostart = Gtk.CheckButton(label="Open Screen Spawner at login, in the top bar")
@@ -1131,11 +1142,7 @@ class Window(Gtk.ApplicationWindow):
         self.autostart_start.connect("toggled", self.on_autostart)
         login.add(self.autostart)
         login.add(self.autostart_start)
-        # Framed, like the device list, so it reads as a block of its own and
-        # not as more display settings.
-        login_frame = Gtk.Frame()
-        login_frame.add(login)
-        outer.add(self.section("At login", login_frame))
+        outer.add(self.section("At login", self.framed(login)))
 
         # Bottom buttons
         bottom = Gtk.Box(spacing=12)
@@ -1191,6 +1198,13 @@ class Window(Gtk.ApplicationWindow):
             return self._api_ok is False and time.monotonic() < deadline
 
         GLib.timeout_add(700, step)
+
+    @staticmethod
+    def framed(child):
+        """A block of settings in a frame, so each reads as one group."""
+        frame = Gtk.Frame()
+        frame.add(child)
+        return frame
 
     @staticmethod
     def section(title, child):
