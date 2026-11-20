@@ -7,7 +7,7 @@ case "$mode" in build|--package-only) ;; *) echo 'ERROR: unknown build mode.' >&
 case "$system" in ubuntu22.04|ubuntu24.04|ubuntu26.04|debian13) ;; *) exit 2 ;; esac
 project=$(cd "$(dirname "$0")/.." && pwd)
 . "$project/packaging/workspace.sh"
-output=${PACKAGE_OUTPUT_DIR:-$workspace/packages-0.1.1}
+output=${PACKAGE_OUTPUT_DIR:-$workspace/packages-0.2.0}
 logs=${PACKAGE_LOG_DIR:-$workspace/docker-tests}
 mkdir -p "$output" "$logs"
 # One build across all distributions and shells. The user authorised using
@@ -26,7 +26,7 @@ required=${SS_BUILD_MIN_GIB:-7}
     docker build -f "$project/packaging/Dockerfile.$system" -t "screen-spawner-builder:$system" "$project"
     # One container per package version; the build volume is shared, so a new
     # version rebuilds incrementally from the previous objects.
-    container="ss-package-$system-0.1.1"
+    container="ss-package-$system-0.2.0"
     if docker container inspect "$container" >/dev/null 2>&1; then
         if [ "$mode" = --package-only ]; then
             marker=$(mktemp)
@@ -43,7 +43,7 @@ required=${SS_BUILD_MIN_GIB:-7}
             "screen-spawner-builder:$system"
     fi
     # Older retained containers can still have the previous output bind mount.
-    artifact="hermes-screen-spawner_0.5.1+ss0.1.1_${system}_amd64.deb"
+    artifact="hermes-screen-spawner_0.5.1+ss0.2.0_${system}_amd64.deb"
     copied=$(mktemp "$output/.package-XXXXXX")
     docker cp "$container:/out/$artifact" "$copied"
     mv -f "$copied" "$output/$artifact"

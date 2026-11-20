@@ -1,4 +1,4 @@
-# Screen Spawner 0.2.0 — Hermes package source and license notices
+# Screen Spawner 0.3.0 — Hermes package source and license notices
 
 These packages contain a modified Hermes 0.5.1, upstream revision
 `7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99`. Modified by itkawa for Screen Spawner
@@ -15,7 +15,7 @@ work. The Web UI provides a direct, no-charge source download link.
 
 The complete release source attachment is:
 
-https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.1.1/hermes-screen-spawner-0.1.1-source.tar.xz
+https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.0/hermes-screen-spawner-0.2.0-source.tar.xz
 
 It contains the modified Hermes sources, recursive submodule contents, build
 scripts, fetched Boost/json sources, web dependencies/preferred-form sources,
@@ -28,7 +28,7 @@ Major embedded components (preserve each component's complete original notices):
 | Component | Version/revision | License |
 |---|---|---|
 | Hermes / Apollo / Sunshine code | 0.5.1, 7de12dc | GPL-3.0-only |
-| Screen Spawner patch/build/install scripts | 0.2.0 | GPL-3.0-only |
+| Screen Spawner patch/build/install scripts | 0.3.0 | GPL-3.0-only |
 | shared-web | 2025.922.181114 | AGPL-3.0-only |
 | Boost | 1.89.0 | Boost Software License 1.0 |
 | nlohmann/json | 3.11.3 | MIT |

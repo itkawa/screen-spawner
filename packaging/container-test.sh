@@ -4,7 +4,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 system=$TEST_SYSTEM
 [ "$system" != mint22 ] || system=ubuntu24.04
-package=/packages/hermes-screen-spawner_0.5.1+ss0.1.1_${system}_amd64.deb
+package=/packages/hermes-screen-spawner_0.5.1+ss0.2.0_${system}_amd64.deb
 apt-get update
 if [ "$TEST_MODE" = package ]; then
     # Minimal Docker images exclude most /usr/share/doc files during unpacking.
@@ -15,7 +15,7 @@ if [ "$TEST_MODE" = package ]; then
     done
     apt-get install -y binutils python3
     dpkg-deb -I "$package"
-    test "$(dpkg-deb -f "$package" Version)" = "0.5.1+ss0.1.1~$system"
+    test "$(dpkg-deb -f "$package" Version)" = "0.5.1+ss0.2.0~$system"
     control=$(mktemp -d)
     dpkg-deb -e "$package" "$control"
     for script in preinst postinst prerm postrm; do test ! -e "$control/$script"; done
@@ -50,7 +50,7 @@ assert len(pages)==8
 for page in pages:
     text=page.read_text()
     assert text.count('id="screen-spawner-source-notice"')==1
-    assert 'screen-spawner-hermes-builds/releases/download/v0.1.1/hermes-screen-spawner-0.1.1-source.tar.xz' in text
+    assert 'screen-spawner-hermes-builds/releases/download/v0.2.0/hermes-screen-spawner-0.2.0-source.tar.xz' in text
 print('PASS: source offers on all 8 Web UI pages and original license notices')
 NOTICES
 

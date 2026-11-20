@@ -5,9 +5,10 @@
 # (same Hermes revision, submodules, Boost/json/npm and codec sources).
 #
 # Usage: refresh-source-archive.sh OLD_ARCHIVE OLD_VERSION NEW_VERSION PACKAGE_DIR
-# PACKAGE_DIR holds the new DEBs; the new archive is written there.
+# PACKAGE_DIR holds the new DEBs; the new archive is written there. The archive
+# names the Screen Spawner release APP_VERSION (default: NEW_VERSION).
 set -euo pipefail
-old_archive=$(realpath "$1"); old=$2; new=$3; out=$(realpath "$4")
+old_archive=$(realpath "$1"); old=$2; new=$3; out=$(realpath "$4"); app=${APP_VERSION:-$new}
 project=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d "$out/.source-XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -32,13 +33,13 @@ cp "$project/LICENSE" "$stage/build-support/SCREEN-SPAWNER-LICENSE"
 sed -n '/^diff --git /,$p' "$project/patches/evdi-fix.patch" > "$stage/build-support/ACTUAL-HERMES-CHANGES.patch"
 
 # Version references in the archive's own descriptions.
-sed -i "s/Screen Spawner $old/Screen Spawner $new/g; s#/v$old/#/v$new/#g; s/hermes-screen-spawner-$old-source/hermes-screen-spawner-$new-source/g" \
+sed -i -E "s/Screen Spawner [0-9]+\.[0-9]+\.[0-9]+/Screen Spawner $app/g; s#/v$old/#/v$new/#g; s/hermes-screen-spawner-$old-source/hermes-screen-spawner-$new-source/g" \
     "$stage/README-SOURCE.md"
-python3 - "$stage/SOURCE-MANIFEST.json" "$old" "$new" <<'PY'
+python3 - "$stage/SOURCE-MANIFEST.json" "$old" "$new" "$app" <<'PY'
 import json, sys, datetime
-path, old, new = sys.argv[1:]
+path, old, new, app = sys.argv[1:]
 m = json.load(open(path))
-m['release'] = f'Screen Spawner {new}'
+m['release'] = f'Screen Spawner {app}'
 m['modified_on'] = datetime.date.today().isoformat()
 m['source_offer'] = m['source_offer'].replace(f'v{old}', f'v{new}').replace(f'-{old}-source', f'-{new}-source')
 open(path, 'w').write(json.dumps(m, indent=2, ensure_ascii=False) + '\n')

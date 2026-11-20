@@ -1,4 +1,4 @@
-# Hermes packages for Screen Spawner 0.2.0
+# Hermes packages for Screen Spawner 0.3.0
 
 Run from the Screen Spawner repository on an amd64 Linux Docker host:
 
@@ -15,7 +15,7 @@ failure. The runner checks `MemAvailable >= 7 GiB` before every build and prints
 `free -g`. Stop and consult the owner if that check fails. Allow roughly an hour
 per system. Never run the installer on the build host.
 
-Outputs: `../packages-0.1.1/`; logs: `../docker-tests/package-build-*.log`.
+Outputs: `../packages-0.2.0/`; logs: `../docker-tests/package-build-*.log`.
 Override with `PACKAGE_OUTPUT_DIR` and `PACKAGE_LOG_DIR`. Docker volumes named
 `ss-package-<system>` preserve source and build objects for a retry. Build
 packages are installed only inside the container. Do not delete these volumes
@@ -53,7 +53,7 @@ byte-for-byte reproducibility.
 ## Validation
 
 After all four builds, pin their actual SHA256 values in `install.sh` and write
-`../packages-0.1.1/SHA256SUMS`. Do not publish placeholder checksums.
+`../packages-0.2.0/SHA256SUMS`. Do not publish placeholder checksums.
 
 ```bash
 python3 packaging/check-installer.py
@@ -80,14 +80,13 @@ containers or host module directories are used.
 
 ## Publication by the owner
 
-Review the logs and changes first. `~/release-packages.sh` (also kept here)
-commits the listed files and pushes main; the Screen Spawner v0.2.0 tag is moved
-to that commit. The packages are rebuilt as 0.5.1+ss0.1.1 and replace the files of
-the existing builds release v0.1.1 (nobody but our own tests had installed them).
-The agent must not run it. Upload the four `.deb` files and `SHA256SUMS` from
-`../packages-0.1.1/` to the separate screen-spawner-hermes-builds v0.1.1 release (replacing its files).
-Publish the Screen Spawner release afterward with `RELEASE-0.2.0.md`; it links
-to the builds release and needs no duplicated binary attachments.
+Review the logs and changes first. The owner publishes; the agent does not.
+Create the screen-spawner-hermes-builds release v0.2.0 with the four `.deb`
+files, the source archive and `SHA256SUMS` from `../packages-0.2.0/` (packages
+0.5.1+ss0.2.0; the v0.1.1 release stays for Screen Spawner 0.2.0). Then push
+main, tag v0.3.0 and publish the Screen Spawner release with
+`RELEASE-0.3.0.md`; it links to the builds release and needs no duplicated
+binary attachments.
 
 Before testing on the live desktop, stop Hermes and run
 `~/hermes-package-backup.sh`. Then run `./uninstall.sh` and `./install.sh` and
@@ -117,7 +116,7 @@ container and does not change the compiled Hermes revision or patch.
 
 ## Corresponding source and Web UI notices
 
-The release must include `hermes-screen-spawner-0.1.1-source.tar.xz` and its
+The release must include `hermes-screen-spawner-0.2.0-source.tar.xz` and its
 entry in SHA256SUMS. Four DEBs + the source archive + SHA256SUMS are the six
 manual release attachments. Do not use only GitHub's automatic repository ZIP
 as the Hermes source: it does not contain the complete dependency sources.
@@ -144,8 +143,8 @@ prepared codec libraries.
 ## Separate artifact repository
 
 Publish the four DEBs, corresponding-source archive and SHA256SUMS in
-https://github.com/itkawa/screen-spawner-hermes-builds/releases/tag/v0.1.1.
-The Screen Spawner v0.2.0 release links there. Full builds require 7 GiB
+https://github.com/itkawa/screen-spawner-hermes-builds/releases/tag/v0.2.0.
+The Screen Spawner v0.3.0 release links there. Full builds require 7 GiB
 available; --package-only requires 1 GiB and never compiles Hermes.
 
 ## Local build workspace

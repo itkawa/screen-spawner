@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as tmp:
     release.write_text('ID=ubuntu\nVERSION_ID=22.04\n')
     result = subprocess.run(['bash', '-c', prelude + '\n! select_package'],
                             env=dict(env, TEST_ARCH='arm64'), check=True)
-    package = root / 'hermes-screen-spawner_0.5.1+ss0.1.1_ubuntu22.04_amd64.deb'
+    package = root / 'hermes-screen-spawner_0.5.1+ss0.2.0_ubuntu22.04_amd64.deb'
     package.write_bytes(b'fixture package; apt is mocked')
     checksum = hashlib.sha256(package.read_bytes()).hexdigest()
     # Replace the actual checksum only in the fixture, whether pending or final.
