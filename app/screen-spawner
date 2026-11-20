@@ -658,6 +658,15 @@ class DeviceModes:
         self._data["default"] = mode
         self._save()
 
+    def shared(self):
+        """"extend" or "mirror" for all devices alike, "per-device", or None
+        when not chosen yet."""
+        return self._data.get("shared")
+
+    def set_shared(self, choice):
+        self._data["shared"] = choice
+        self._save()
+
 
 def autostart_state():
     """(opens at login, starts Hermes at login), from the autostart entry."""
@@ -1017,6 +1026,22 @@ class Window(Gtk.ApplicationWindow):
         outer.add(self.section("Hermes", row))
 
         # Devices
+        # One mode for all devices at once; each device's own list below can
+        # still set it apart.
+        shared = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.all_extend = Gtk.RadioButton.new_with_label(
+            None, "Extended: each device is a screen of its own")
+        self.all_mirror = Gtk.RadioButton.new_with_label_from_widget(
+            self.all_extend, "Mirrored: every device shows the main screen")
+        self.per_device = Gtk.RadioButton.new_with_label_from_widget(
+            self.all_extend, "Per device: choose for each device under Devices")
+        self._shared_buttons = {"extend": self.all_extend, "mirror": self.all_mirror,
+                                "per-device": self.per_device}
+        for choice, button in self._shared_buttons.items():
+            button.connect("toggled", self.on_shared_mode, choice)
+            shared.add(button)
+        outer.add(self.section("Display", shared))
+
         devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.device_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.device_list.get_style_context().add_class("frame")
@@ -1201,10 +1226,30 @@ class Window(Gtk.ApplicationWindow):
                 mode.set_active_id("extend")
             # The mode is chosen for a device on screen; it is kept for the
             # next time the device connects.
-            mode.set_sensitive(connected)
-            mode.set_tooltip_text("What this device shows" if connected else
-                                  "Connect the device in Moonlight to choose what it shows.")
+            per_device = self.app.shared_choice() == "per-device"
+            mode.set_sensitive(connected and per_device)
+            if not per_device:
+                mode.set_tooltip_text("Choose “Per device” under Display to set this device apart.")
+            elif not connected:
+                mode.set_tooltip_text("Connect the device in Moonlight to choose what it shows.")
+            else:
+                mode.set_tooltip_text("What this device shows")
+        self.show_shared_mode()
         self._updating = updating
+
+    def show_shared_mode(self):
+        """Mark the Display choice: one mode for all devices, or per device."""
+        updating = self._updating
+        self._updating = True
+        choice = self.app.shared_choice()
+        self._shared_buttons[choice].set_active(True)
+        self.app.show_shared_mode_in_menu(choice)
+        self._updating = updating
+
+    def on_shared_mode(self, button, choice):
+        if self._updating or not button.get_active():
+            return
+        self.app.set_shared_choice(choice)
 
     def on_device_mode(self, combo, client):
         if self._updating or combo.get_active_id() is None:
@@ -1409,6 +1454,7 @@ class App(Gtk.Application):
         self.start_hermes_at_launch = False
         self.indicator = None
         self._indicator_items = {}
+        self._indicator_updating = False
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -1463,10 +1509,20 @@ class App(Gtk.Application):
         item("Open Screen Spawner", lambda *_: self.do_activate())
         self._indicator_items["start_stop"] = item("Start Hermes", lambda *_: self.window.on_start_stop())
         menu.append(Gtk.SeparatorMenuItem())
+        # The same shared mode as in the window, for all devices at once.
+        extend = Gtk.RadioMenuItem(label="Extended (all devices)")
+        mirror = Gtk.RadioMenuItem(label="Mirrored (all devices)", group=extend)
+        per_device = Gtk.RadioMenuItem(label="Per device", group=extend)
+        for entry, choice in ((extend, "extend"), (mirror, "mirror"), (per_device, "per-device")):
+            entry.connect("toggled", self._menu_shared_mode, choice)
+            menu.append(entry)
+            self._indicator_items[choice] = entry
+        menu.append(Gtk.SeparatorMenuItem())
         item("Hermes settings", lambda *_: self.open_settings())
         item("Quit", lambda *_: self.quit_all())
         menu.show_all()
         self.indicator.set_menu(menu)
+        self.show_shared_mode_in_menu(self.shared_choice())
 
     def watch_hermes(self):
         """Hear from the system when the Hermes this app started exits."""
@@ -1623,6 +1679,56 @@ class App(Gtk.Application):
 
         threading.Thread(target=work, daemon=True).start()
         return False
+
+    def shared_choice(self):
+        """"extend" or "mirror" when one mode is set for all devices, or
+        "per-device". Before it was ever chosen: what the saved modes add up to."""
+        choice = self.modes.shared()
+        if choice in ("extend", "mirror", "per-device"):
+            return choice
+        uuids = [c.get("uuid") for c in self.clients]
+        chosen = {self.chosen_mode(u) for u in uuids} if uuids else {self.chosen_mode(None)}
+        if chosen == {"extend"}:
+            return "extend"
+        if chosen == {self.chosen_mode_for("mirror")}:
+            return "mirror"
+        return "per-device"
+
+    def chosen_mode_for(self, mode):
+        """How a mode is listed for a device ("mirror" becomes the primary monitor)."""
+        if mode != "mirror" or not self.mutter:
+            return mode
+        try:
+            primary = self.mutter.primary_connector(self.mutter.state()[2])
+        except GLib.Error:
+            return None
+        return f"mirror:{primary}" if primary else None
+
+    def set_shared_choice(self, choice):
+        """The user chose under Display. One mode for all is kept for each paired
+        device and for devices paired later, and applied to the connected ones;
+        "per-device" keeps each device's mode and unlocks its list."""
+        log(f"user chose {choice} under Display")
+        self.modes.set_shared(choice)
+        if choice in ("extend", "mirror"):
+            for client in self.clients:
+                self.modes.set(client.get("uuid"), choice)
+            self.modes.set_default(choice)
+        if self.window:
+            self.window.update_device_rows()
+        if choice in ("extend", "mirror"):
+            self.apply_device_modes()
+
+    def _menu_shared_mode(self, entry, choice):
+        if not self._indicator_updating and entry.get_active():
+            self.set_shared_choice(choice)
+
+    def show_shared_mode_in_menu(self, choice):
+        if not self.indicator:
+            return
+        self._indicator_updating = True
+        self._indicator_items[choice].set_active(True)
+        self._indicator_updating = False
 
     def set_device_mode(self, client, mode):
         """The user chose a mode for a device: keep it, and apply it now if the
