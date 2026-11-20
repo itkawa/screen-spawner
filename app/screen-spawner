@@ -79,6 +79,14 @@ def evdi_device_count():
         return 0
 
 
+def process_binary(pid):
+    """The program a process runs. A program replaced while it runs, as when
+    Hermes is rebuilt, shows up with " (deleted)" after its path; it is
+    still the same Hermes."""
+    path = os.path.realpath(f"/proc/{pid}/exe")
+    return path[:-len(" (deleted)")] if path.endswith(" (deleted)") else path
+
+
 def evdi_devices_at_boot():
     """The number of EVDI devices the driver will make at the next start, from
     the module options (the last one counts), or None if none is set."""
@@ -230,7 +238,7 @@ class Hermes:
         cached = getattr(self, "_pid", None)
         if cached:
             try:
-                if os.path.realpath(f"/proc/{cached}/exe") == binary:
+                if process_binary(cached) == binary:
                     return cached
             except OSError:
                 pass
@@ -239,7 +247,7 @@ class Hermes:
             if not entry.isdigit():
                 continue
             try:
-                if os.path.realpath(f"/proc/{entry}/exe") == binary and \
+                if process_binary(entry) == binary and \
                         os.stat(f"/proc/{entry}").st_uid == os.getuid():
                     self._pid = int(entry)
                     return self._pid
