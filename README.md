@@ -125,6 +125,19 @@ BUILD_JOBS=4 ./install.sh --build-from-source
 
 The app goes to `~/.local/share/screen-spawner`, together with a copy of this README. It needs Python with GTK 3 and the AyatanaAppIndicator library for its top bar icon; the installer adds them if they are missing. On plain GNOME, as on Debian, it also adds the AppIndicator extension for GNOME Shell; log out and in once after the installation to see the icon.
 
+### What it changes on your system
+
+Screen Spawner does not change the Linux kernel. For the virtual monitor it relies on EVDI, the DisplayLink driver:
+
+* It installs `evdi-dkms` from your distribution's repositories, and the kernel headers it needs. DKMS builds EVDI as a separate module (`evdi.ko`) for each installed kernel and builds it again after a kernel update. It is loaded and unloaded like any other driver.
+* It writes `options evdi initial_device_count=4` to `/etc/modprobe.d/evdi.conf`, so the driver creates four devices at boot, one for each tablet or phone that can connect at the same time, and adds `evdi` to `/etc/modules`, so the driver loads at boot. **Devices at once** in the app changes the number; it takes effect after a restart. Unused devices cost nothing.
+
+When EVDI loads, the kernel log says `evdi: module verification failed: signature and/or required key missing - tainting kernel`. That is normal for any driver DKMS builds on your computer instead of your distribution signing it: the kernel only notes that a module without its signature is loaded. Nothing is changed or broken by it. With Secure Boot on, the module has to be signed with a key enrolled in the firmware; Ubuntu offers to enroll one while it installs `evdi-dkms`.
+
+Everything else is ordinary software: the Hermes package and its dependencies, and the app in your home folder. `uninstall.sh` removes what the installer added, except the kernel headers and your Hermes settings; see below.
+
+If a kernel update ever leaves EVDI unbuilt, only the tablet stops connecting. The computer starts and works as usual, because your screens are driven by the graphics card's own driver. See [EVDI is missing](#evdi-is-missing).
+
 ### Uninstall
 
 ```bash
@@ -255,7 +268,6 @@ The installation and uninstallation were tested end to end on clean Ubuntu 22.04
 
 * **The virtual monitor stays after you quit Moonlight.** Hermes only pauses the session, so the monitor remains in the display settings, and windows on it stay out of sight until you reconnect or stop Hermes.
 * **A VPN on the tablet can block the connection.** Turn it off if Moonlight cannot find or reach the laptop.
-* **One extra monitor at a time.** With EVDI, Hermes creates a single virtual monitor. A second device that connects, for example a phone while the tablet is connected, joins the same session and shows the same screen; both can control it. A separate screen per device is planned.
 
 ---
 
@@ -340,6 +352,14 @@ If nothing appears:
 ```bash
 sudo modprobe evdi
 ```
+
+If it says the module is not found, EVDI was not built for the kernel you are running, usually right after a kernel update. Build it with:
+
+```bash
+sudo dkms autoinstall
+```
+
+`dkms status` lists the kernels EVDI is built for. Until it builds, you can start the previous kernel from the boot menu (the **Advanced options** entry).
 
 ### No virtual monitor appears
 
