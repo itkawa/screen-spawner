@@ -5,6 +5,38 @@ All notable changes to Screen Spawner are listed here.
 ## Planned
 
 - Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
+- Touch per device and a choice of how the tablet's touches act; sound per device.
+
+## 0.3.0
+
+### Several devices at once
+
+- Each tablet or phone gets a screen of its own, all on one desktop: windows move between them as between physical monitors. Up to four devices at once by default.
+- One device leaving no longer disconnects the others, and Moonlight no longer says that the session was started on another device.
+- Coming back to Moonlight after it went to the background no longer fails with error 503.
+
+### The app
+
+- **Extended**, **Mirrored** for all devices, or **Per device**: each device shows its own screen or mirrors any of the computer's monitors: the built-in display or an external one. The choice is kept for every device.
+- **Devices at once**: how many devices can connect at the same time. It asks for the administrator password and takes effect after a restart.
+- Before starting Hermes the app checks the EVDI driver and, if it is missing (for example after a kernel update), says what to do. It does not start a second Hermes. If GNOME refuses a new display layout, the previous one comes back.
+- The display modes and the devices are in one frame, and pairing and **Devices at once** in one row.
+- New icons: the penguin with two monitors, and two monitors in the top bar.
+
+### Hermes
+
+The Hermes packages (`0.5.1+ss0.2.0`, builds release v0.2.0) add to `patches/evdi-fix.patch`:
+
+- a virtual display for each connected device, and ending only the session of the device that leaves;
+- the device's name, a serial number that stays the same between connections, and the sizes of all monitors in the virtual display's EDID, so GNOME recognises the device and it can mirror any monitor;
+- on X11, the monitor sizes come from the X server at once instead of from GNOME, which could take 22 s while GNOME was rearranging the displays, so a second device failed to connect.
+
+The packages now depend on `x11-xserver-utils` and `libglib2.0-bin` (`xrandr` and `gdbus`, which Hermes calls).
+
+### Also
+
+- `install.sh` makes four EVDI devices at boot instead of one, unless another number was chosen; when EVDI is already loaded with fewer, it asks to restart the computer.
+- The README describes what the installer changes on the system, and why the kernel's "tainting kernel" line about the EVDI module is expected.
 
 ## 0.2.0
 

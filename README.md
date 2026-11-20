@@ -97,7 +97,7 @@ cd screen-spawner
 Version 0.1.0 builds Hermes from source and can take 30–60 minutes.
 For installation from prebuilt packages, use **0.1.1 or newer**.
 
-The script downloads a prebuilt, patched Hermes package from the **v0.1.1** release in the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds),
+The script downloads a prebuilt, patched Hermes package from the **v0.2.0** release in the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
 to load at boot, and installs the **Screen Spawner** app with its launcher in the
 application menu (see [Usage](#usage)). A **Hermes** launcher is added as well, for
