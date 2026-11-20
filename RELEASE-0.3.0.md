@@ -19,6 +19,7 @@ Connect a tablet and a phone (up to four devices) at the same time: each one get
 ## Fixed
 
 - Returning to Moonlight after it was in the background failed with error 503.
+- On X11, switching a device to a mirror took 4–5 s and the laptop screen blinked three times; it now takes about 0.2 s.
 - On X11, a second device could not connect while GNOME was rearranging the displays: Hermes waited 22 s for an answer from GNOME. It now asks the X server.
 
 ## Installation

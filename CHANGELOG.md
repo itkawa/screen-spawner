@@ -20,6 +20,7 @@ All notable changes to Screen Spawner are listed here.
 - **Extended**, **Mirrored** for all devices, or **Per device**: each device shows its own screen or mirrors any of the computer's monitors: the built-in display or an external one. The choice is kept for every device.
 - **Devices at once**: how many devices can connect at the same time. It asks for the administrator password and takes effect after a restart.
 - Before starting Hermes the app checks the EVDI driver and, if it is missing (for example after a kernel update), says what to do. It does not start a second Hermes. If GNOME refuses a new display layout, the previous one comes back.
+- On X11 a device's screen switches with `xrandr`, in two steps: the monitors move first and the X screen shrinks after that. Before, the HDMI monitor went off for a moment, which on recent Intel graphics restarts the laptop panel: switching to a mirror took 4–5 s and the laptop screen blinked three times. Now it takes about 0.2 s.
 - The display modes and the devices are in one frame, and pairing and **Devices at once** in one row.
 - New icons: the penguin with two monitors, and two monitors in the top bar.
 
