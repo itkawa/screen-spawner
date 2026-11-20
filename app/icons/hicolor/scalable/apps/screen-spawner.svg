@@ -4,7 +4,7 @@
       <stop offset="0" stop-color="#9152f2"/>
       <stop offset="1" stop-color="#3a0f82"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.66" cy="0.36" r="0.6">
+    <radialGradient id="glow" cx="0.62" cy="0.32" r="0.6">
       <stop offset="0" stop-color="#e2c6ff" stop-opacity="0.6"/>
       <stop offset="1" stop-color="#e2c6ff" stop-opacity="0"/>
     </radialGradient>
@@ -18,28 +18,28 @@
   </defs>
 
   <g clip-path="url(#tile)">
-    <!-- Background with a soft glow behind the monitor -->
     <rect x="8" y="8" width="240" height="240" fill="url(#bg)"/>
     <rect x="8" y="8" width="240" height="240" fill="url(#glow)"/>
 
-    <!-- Monitor with a thick white frame, so it survives being shrunk -->
-    <rect x="96" y="40" width="132" height="96" rx="14" fill="url(#screen)" stroke="#ffffff" stroke-width="12"/>
-    <rect x="182" y="136" width="18" height="24" fill="#ffffff"/>
-    <rect x="160" y="158" width="62" height="12" rx="6" fill="#ffffff"/>
+    <!-- A second monitor, lower and further away: more screens, one per device -->
+    <rect x="146" y="128" width="94" height="68" rx="11" fill="url(#screen)" stroke="#ffffff" stroke-width="10" opacity="0.9"/>
+    <rect x="186" y="196" width="14" height="17" fill="#ffffff" opacity="0.9"/>
+    <rect x="168" y="210" width="50" height="10" rx="5" fill="#ffffff" opacity="0.9"/>
 
-    <!-- The plus: a new screen appears -->
-    <path d="M155 60 h14 a4 4 0 0 1 4 4 v18 h18 a4 4 0 0 1 4 4 v14 a4 4 0 0 1-4 4 h-18 v18 a4 4 0 0 1-4 4 h-14 a4 4 0 0 1-4-4 v-18 h-18 a4 4 0 0 1-4-4 v-14 a4 4 0 0 1 4-4 h18 v-18 a4 4 0 0 1 4-4z" fill="#ffffff"/>
+    <!-- The monitor being added, with the plus, half behind the penguin -->
+    <rect x="52" y="30" width="132" height="96" rx="14" fill="url(#screen)" stroke="#ffffff" stroke-width="12"/>
+    <path d="M127 50 h14 a4 4 0 0 1 4 4 v18 h18 a4 4 0 0 1 4 4 v14 a4 4 0 0 1-4 4 h-18 v18 a4 4 0 0 1-4 4 h-14 a4 4 0 0 1-4-4 v-18 h-18 a4 4 0 0 1-4-4 v-14 a4 4 0 0 1 4-4 h18 v-18 a4 4 0 0 1 4-4z" fill="#ffffff"/>
 
     <!-- Penguin: round dark head, white two-lobed face, orange beak, happy eyes -->
-    <circle cx="92" cy="184" r="80" fill="#ffffff"/>
-    <circle cx="92" cy="184" r="73" fill="#1b0f2e"/>
+    <circle cx="84" cy="188" r="76" fill="#ffffff"/>
+    <circle cx="84" cy="188" r="69" fill="#1b0f2e"/>
     <g fill="#ffffff">
-      <circle cx="70" cy="178" r="27"/>
-      <circle cx="114" cy="178" r="27"/>
-      <ellipse cx="92" cy="216" rx="50" ry="44"/>
+      <circle cx="63" cy="182" r="25"/>
+      <circle cx="105" cy="182" r="25"/>
+      <ellipse cx="84" cy="218" rx="47" ry="41"/>
     </g>
-    <path d="M58 176 q12 -13 24 0" fill="none" stroke="#1b0f2e" stroke-width="7" stroke-linecap="round"/>
-    <path d="M102 176 q12 -13 24 0" fill="none" stroke="#1b0f2e" stroke-width="7" stroke-linecap="round"/>
-    <path d="M72 192 h40 q-6 22 -20 22 q-14 0 -20 -22z" fill="#ffa21f" stroke="#e57a00" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M52 180 q11 -12 22 0" fill="none" stroke="#1b0f2e" stroke-width="7" stroke-linecap="round"/>
+    <path d="M94 180 q11 -12 22 0" fill="none" stroke="#1b0f2e" stroke-width="7" stroke-linecap="round"/>
+    <path d="M65 195 h38 q-6 21 -19 21 q-13 0 -19 -21z" fill="#ffa21f" stroke="#e57a00" stroke-width="3" stroke-linejoin="round"/>
   </g>
 </svg>
