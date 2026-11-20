@@ -10,9 +10,9 @@ Use an Android tablet as an extra screen for Linux, a phone as a portable displa
 
 *From left: HDMI monitor, laptop screen, and an Android tablet as the third display.*
 
-![GNOME display settings with three displays: the HDMI monitor, the laptop screen and the tablet](docs/display-settings.png)
+![GNOME display settings with four displays: the laptop screen, the HDMI monitor, a tablet and a phone](docs/display-settings.png)
 
-*GNOME Settings → Displays sees the tablet (3) as a regular monitor: it can be moved, mirrored or made primary like the others.*
+*GNOME Settings → Displays with four displays: the laptop, the HDMI monitor, a tablet and a phone. GNOME sees each device as a regular monitor: it can be moved, mirrored or made primary like the others.*
 
 It is built on **Hermes + Moonlight**: Hermes runs on the laptop, creates the virtual monitor and streams it, and Moonlight on the tablet shows it and sends touch, mouse and keyboard input back.
 
@@ -156,7 +156,7 @@ Essential/protected system packages and their dependencies are always kept, even
 
 Everything is done in the **Screen Spawner** app. Open it from the application menu. It has a window with two tabs, **Screen Spawner** and **Activity**, and an icon in the top bar.
 
-![The Screen Spawner window: Hermes running, extended mode, two paired devices](docs/app-main.png)
+![The Screen Spawner window: Hermes running, a mode per device, a tablet with its own screen and a phone mirroring the HDMI monitor](docs/app-main.png)
 
 ### Start and stop Hermes
 
