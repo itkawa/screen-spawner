@@ -3,9 +3,9 @@
 """Screen Spawner: a small window and top bar icon to run Hermes for a tablet.
 
 It starts and stops Hermes, pairs a tablet or phone by the PIN Moonlight shows
-and gives it the permissions it needs, switches the Desktop app between an
-extended and a mirrored display, removes paired devices, opens the Hermes Web
-UI and starts the uninstaller.
+and gives it the permissions it needs, gives each device a screen of its own
+or lets it mirror a monitor, removes paired devices, opens the Hermes Web UI
+and starts the uninstaller.
 
 It talks to Hermes through its local API with the token Hermes publishes in
 $XDG_RUNTIME_DIR/hermes/local-api.token, so no Web UI password is needed.
@@ -59,9 +59,8 @@ AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", "screen-s
 HIDDEN_ARG = "--hidden"
 START_ARG = "--start"
 EVDI_COUNT = "/sys/devices/evdi/count"
-MODE_HINT = "Switches a connected tablet at once."
-SEVERAL_DEVICES_HINT = ("{count} devices are connected, each with its own screen. "
-                        "Mirroring works while one device is connected.")
+# The display mode chosen for each device (see DeviceModes).
+DEVICES_FILE = os.path.join(GLib.get_user_config_dir(), "screen-spawner", "devices.json")
 
 
 def evdi_device_count():
@@ -312,40 +311,11 @@ class Hermes:
                 return app
         raise HermesError(f'Hermes has no "{DESKTOP_APP}" app.')
 
-    def layout(self):
-        app = self.desktop_app()
-        if not app.get("virtual-display"):
-            return None
-        return "mirror" if app.get("virtual-display-layout") == "mirror" else "extend"
-
-    def ensure_virtual_display(self):
-        """Out of the box the Desktop app streams the laptop's own screen. Turn its
-        virtual display on, as extended, unless it is on already. Only while the
-        Desktop app is not running: saving ends it. Returns True when done."""
-        app = self.desktop_app()
-        if app.get("virtual-display"):
-            return True
-        if self.app_running():
-            return False
-        app["virtual-display"] = True
-        if app.get("virtual-display-layout") not in ("extend", "mirror"):
-            app["virtual-display-layout"] = "extend"
-        if not self.post("/api/apps", app).get("status"):
-            raise HermesError("Hermes did not save the Desktop app.")
-        log("turned on the virtual display of the Desktop app")
-        return True
-
-    def set_layout(self, layout):
-        app = self.desktop_app()
-        app["virtual-display"] = True
-        app["virtual-display-layout"] = layout
-        if not self.post("/api/apps", app).get("status"):
-            raise HermesError("Hermes did not save the display mode.")
-
 
 class Mutter:
-    """Switch a connected tablet between extended and mirrored at once, the way GNOME
-    Settings does, through org.gnome.Mutter.DisplayConfig (X11 and Wayland)."""
+    """Put each device's virtual screen beside the other monitors or mirror one
+    of them, the way GNOME Settings does, through org.gnome.Mutter.DisplayConfig
+    (X11 and Wayland)."""
 
     NAME = "org.gnome.Mutter.DisplayConfig"
     PATH = "/org/gnome/Mutter/DisplayConfig"
@@ -356,6 +326,10 @@ class Mutter:
     def _call(self, method, args=None):
         return self.bus.call_sync(self.NAME, self.PATH, self.NAME, method, args, None,
                                   Gio.DBusCallFlags.NONE, 5000, None).unpack()
+
+    def state(self):
+        """(serial, monitors, logical monitors, properties) as GNOME has them now."""
+        return self._call("GetCurrentState")
 
     @staticmethod
     def evdi_connectors():
@@ -373,26 +347,58 @@ class Mutter:
                     names.append(entry[len(card) + 1:])
         return names
 
-    def tablets(self, monitors):
-        """The monitors of the virtual displays, one per connected device. X11
-        names an output of a second GPU with a suffix, so DVI-I-1 appears as
-        DVI-I-1-1."""
+    def screens(self, monitors):
+        """The monitors of the virtual displays, one per connected device, as
+        (spec, modes). X11 names an output of a second GPU with a suffix, so
+        DVI-I-1 appears as DVI-I-1-1."""
         connectors = self.evdi_connectors()
         return [(spec, modes) for spec, modes, _props in monitors
                 if any(spec[0] == c or spec[0].startswith(c + "-") for c in connectors)]
 
-    def tablet(self, monitors):
-        """The monitor of the virtual display when one device is connected."""
-        found = self.tablets(monitors)
-        return found[0] if found else (None, None)
+    def physical(self, monitors):
+        """The other monitors, as (connector, English name). GNOME's own
+        display name is translated, and the app is in English: the built-in
+        panel is "built-in display", any other monitor goes by the model in its
+        EDID, or by its connector when the EDID has no readable model."""
+        own = {spec[0] for spec, _ in self.screens(monitors)}
+        result = []
+        for spec, _modes, props in monitors:
+            if spec[0] in own:
+                continue
+            product = (spec[2] or "").strip()
+            if props.get("is-builtin"):
+                name = "built-in display"
+            elif product and not product.lower().startswith("0x"):
+                name = product
+            else:
+                name = spec[0]
+            result.append((spec[0], name))
+        return result
 
-    def connected_count(self):
-        """How many devices have a virtual screen now."""
-        try:
-            _, monitors, _, _ = self._call("GetCurrentState")
-        except GLib.Error:
-            return 0
-        return len(self.tablets(monitors))
+    @staticmethod
+    def edid_serial(uuid):
+        """The serial number Hermes writes into the EDID of a device's screen:
+        FNV-1a over its uppercase UUID, as GNOME prints it."""
+        value = 2166136261
+        for byte in (uuid or "").upper().encode():
+            value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+        return f"0x{value or 1:08x}"
+
+    def screen_of(self, client, monitors, clients):
+        """The connector of this device's screen, or None. Hermes puts a serial
+        made from the device's UUID into the EDID. A Hermes without that names
+        every screen alike; then one connected device with one screen still
+        matches."""
+        found = self.screens(monitors)
+        serial = self.edid_serial(client.get("uuid"))
+        for spec, _ in found:
+            if spec[3] == serial:
+                return spec[0]
+        connected = [c for c in clients if c.get("connected")]
+        if len(found) == 1 and len(connected) == 1 and connected[0].get("uuid") == client.get("uuid") \
+                and found[0][0][3] == "0x00000001":
+            return found[0][0][0]
+        return None
 
     @staticmethod
     def current_mode(modes):
@@ -401,109 +407,166 @@ class Mutter:
                 return mode
         return None
 
-    def connected(self):
-        return self.connected_count() > 0
+    @staticmethod
+    def primary_connector(logical):
+        for _x, _y, _scale, _transform, primary, specs, _props in logical:
+            if primary and specs:
+                return specs[0][0]
+        return None
 
-    def current_layout(self):
-        """'mirror' or 'extend' as GNOME has the tablets now, or None if none is
-        connected. 'mirror' if any of them mirrors another monitor."""
-        _, monitors, logical, _ = self._call("GetCurrentState")
-        names = {spec[0] for spec, _ in self.tablets(monitors)}
-        if not names:
-            return None
-        for *_, specs, _props in logical:
-            if len(specs) > 1 and any(s[0] in names for s in specs):
-                return "mirror"
+    def resolve(self, mode, monitors, logical):
+        """A saved mode as it applies now: "extend", or "mirror:<connector>" of
+        a monitor that is there. "mirror" alone, or a monitor that is not
+        connected, means the primary monitor."""
+        if not mode.startswith("mirror"):
+            return "extend"
+        target = mode.partition(":")[2]
+        present = {connector for connector, _ in self.physical(monitors)}
+        if target not in present:
+            target = self.primary_connector(logical)
+        return f"mirror:{target}" if target in present else "extend"
+
+    def layout_of(self, connector, logical):
+        """'extend', or 'mirror:<connector>' of the monitor this screen mirrors."""
+        for *_rest, specs, _props in logical:
+            names = [s[0] for s in specs]
+            if connector in names and len(names) > 1:
+                others = [n for n in names if n != connector]
+                return f"mirror:{others[0]}"
         return "extend"
 
-    def apply(self, layout):
-        """Switch the connected tablet, check that GNOME did, and try once more if not.
-        Returns False if no tablet is connected."""
-        current = self.current_layout()
-        if current is None:
-            return False
-        if current == layout:
-            return True
-        count = self.connected_count()
-        if count > 1 and layout == "mirror":
-            raise HermesError(SEVERAL_DEVICES_HINT.format(count=count))
+    def apply_device(self, connector, mode):
+        """Put one device's screen into `mode` ("extend" or "mirror:<connector>"),
+        check that GNOME did, and try once more if not."""
         for attempt in (1, 2):
             try:
-                if not self._apply_once(layout):
-                    return False
+                self._apply_device_once(connector, mode)
             except GLib.Error as e:
                 # A stale serial is refused when the monitors changed in between.
-                log(f"apply {layout}, attempt {attempt}: GNOME refused: {e.message}")
+                log(f"{connector} -> {mode}, attempt {attempt}: GNOME refused: {e.message}")
                 if attempt == 2:
                     raise
                 time.sleep(0.3)
                 continue
             for _ in range(10):
-                if self.current_layout() == layout:
-                    log(f"apply {layout}, attempt {attempt}: done")
-                    return True
+                if self.layout_of(connector, self.state()[2]) == mode:
+                    log(f"{connector} -> {mode}, attempt {attempt}: done")
+                    return
                 time.sleep(0.15)
-            log(f"apply {layout}, attempt {attempt}: GNOME still shows {self.current_layout()}")
-        raise HermesError(f"GNOME did not switch the tablet to {layout}. Try again.")
+            log(f"{connector} -> {mode}, attempt {attempt}: GNOME still shows "
+                f"{self.layout_of(connector, self.state()[2])}")
+        raise HermesError("GNOME did not switch the screen. Try again.")
 
-    def _apply_once(self, layout):
-        serial, monitors, logical, props = self._call("GetCurrentState")
-        found = self.tablets(monitors)
-        if not found:
-            return False
-        spec, modes = found[0]
-        if layout == "extend":
-            # With several devices, the one to move out is the one mirroring.
-            mirrored = {s[0] for *_, specs, _props in logical if len(specs) > 1 for s in specs}
-            spec, modes = next(((s, m) for s, m in found if s[0] in mirrored), found[0])
+    def _apply_device_once(self, connector, mode):
+        serial, monitors, logical, props = self.state()
         by_connector = {m[0][0]: m for m in monitors}
+        if connector not in by_connector:
+            raise HermesError("The device's screen is gone; it may have disconnected.")
+        modes = by_connector[connector][1]
         scale_logical = props.get("layout-mode") == 1   # 1: logical, 2: physical
 
         result = []
-        primary_index = None
         for x, y, scale, transform, primary, specs, _ in logical:
-            members = [s for s in specs if s[0] != spec[0]]
+            members = [s for s in specs if s[0] != connector]
             if not members:
                 continue
             entries = []
             for s in members:
-                mode = self.current_mode(by_connector[s[0]][1])
-                if mode is None:
+                current = self.current_mode(by_connector[s[0]][1])
+                if current is None:
                     raise HermesError(f"GNOME reports no mode for {s[0]}.")
-                entries.append((s[0], mode[0], {}))
-            if primary:
-                primary_index = len(result)
+                entries.append((s[0], current[0], {}))
             result.append([x, y, scale, transform, primary, entries])
-        if primary_index is None:
+        if not any(lm[4] for lm in result):
             raise HermesError("GNOME reports no primary monitor.")
+        # A screen of its own that sat between other monitors leaves a gap, and
+        # GNOME refuses monitors that do not touch: move the ones to its right
+        # left by its width.
+        for x, _y, scale, _t, _p, specs, _ in logical:
+            if [s[0] for s in specs] != [connector]:
+                continue
+            current = self.current_mode(modes)
+            if current is not None:
+                width = int(round(current[1] / scale if scale_logical else current[1]))
+                for lm in result:
+                    if lm[0] >= x + width:
+                        lm[0] -= width
+            break
 
-        if layout == "mirror":
-            first = result[primary_index][5][0]
-            primary_mode = next(m for m in by_connector[first[0]][1] if m[0] == first[1])
-            same = [m for m in modes if m[1] == primary_mode[1] and m[2] == primary_mode[2]]
+        target = mode.partition(":")[2] if mode.startswith("mirror") else None
+        if target:
+            # GNOME mirrors only between monitors of the same size, so the
+            # screen switches to a mode of the target's size. Hermes offers the
+            # sizes of all monitors in the screen's EDID.
+            group = next((lm for lm in result if any(e[0] == target for e in lm[5])), None)
+            if group is None:
+                raise HermesError(f"{target} is not on the desktop.")
+            target_mode = self.current_mode(by_connector[target][1])
+            same = [m for m in modes if m[1] == target_mode[1] and m[2] == target_mode[2]]
             if not same:
                 raise HermesError(
-                    f"The tablet has no {primary_mode[1]}×{primary_mode[2]} mode to mirror the main "
-                    "screen. Reconnect it in Moonlight once so Hermes offers that mode.")
-            result[primary_index][5].append((spec[0], same[0][0], {}))
+                    f"The device's screen has no {target_mode[1]}×{target_mode[2]} mode to mirror "
+                    f"{target}. Reconnect it in Moonlight once so Hermes offers that size.")
+            group[5].append((connector, same[0][0], {}))
         else:
             # The preferred mode is the one Moonlight asked for; while mirrored the
-            # tablet runs at the main screen's size instead.
-            mode = next((m for m in modes if m[6].get("is-preferred")), None) \
+            # screen runs at the mirrored monitor's size instead.
+            preferred = next((m for m in modes if m[6].get("is-preferred")), None) \
                 or self.current_mode(modes) or modes[0]
             right = 0
-            for x, y, scale, transform, primary, entries in result:
+            for x, _y, scale, _t, _p, entries in result:
                 m = next(m for m in by_connector[entries[0][0]][1] if m[0] == entries[0][1])
                 width = m[1] / scale if scale_logical else m[1]
                 right = max(right, x + int(round(width)))
-            result.append([right, 0, 1.0, 0, False, [(spec[0], mode[0], {})]])
+            result.append([right, 0, 1.0, 0, False, [(connector, preferred[0], {})]])
 
-        config = [(int(x), int(y), float(s), int(t), bool(p), entries)
-                  for x, y, s, t, p, entries in result]
+        config = [(int(x), int(y), float(sc), int(t), bool(p), entries)
+                  for x, y, sc, t, p, entries in result]
         # Method 1: temporary, like a session's own change; GNOME does not ask to keep it.
         self._call("ApplyMonitorsConfig", GLib.Variant(
             "(uua(iiduba(ssa{sv}))a{sv})", (serial, 1, config, {})))
-        return True
+
+
+class DeviceModes:
+    """The display mode chosen for each paired device, by its UUID: "extend",
+    "mirror" (the primary monitor) or "mirror:<connector>". A device without one
+    gets the default, which starts as what Hermes had before."""
+
+    def __init__(self):
+        self._data = {}
+        try:
+            with open(DEVICES_FILE) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                self._data = data
+        except (OSError, ValueError):
+            pass
+
+    def _save(self):
+        try:
+            os.makedirs(os.path.dirname(DEVICES_FILE), exist_ok=True)
+            temporary = DEVICES_FILE + ".new"
+            with open(temporary, "w") as f:
+                json.dump(self._data, f, indent=1, sort_keys=True)
+            os.replace(temporary, DEVICES_FILE)
+        except OSError as e:
+            log(f"could not save the device modes: {e}")
+
+    def get(self, uuid):
+        modes = self._data.get("modes") or {}
+        return modes.get((uuid or "").upper()) or self._data.get("default") or "extend"
+
+    def set(self, uuid, mode):
+        self._data.setdefault("modes", {})[(uuid or "").upper()] = mode
+        self._save()
+
+    def forget(self, uuid):
+        if (self._data.get("modes") or {}).pop((uuid or "").upper(), None) is not None:
+            self._save()
+
+    def set_default(self, mode):
+        self._data["default"] = mode
+        self._save()
 
 
 def autostart_state():
@@ -863,24 +926,19 @@ class Window(Gtk.ApplicationWindow):
         row.pack_end(self.start_stop, False, False, 0)
         outer.add(self.section("Hermes", row))
 
-        # Display mode
-        modes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.extend = Gtk.RadioButton.new_with_label(None, "Extended: the tablet is a separate screen")
-        self.mirror = Gtk.RadioButton.new_with_label_from_widget(self.extend, "Mirrored: the tablet shows the main screen")
-        self.extend.connect("toggled", self.on_mode)
-        self.mode_hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=50, label=MODE_HINT)
-        self.mode_hint.get_style_context().add_class("dim-label")
-        for w in (self.extend, self.mirror, self.mode_hint):
-            modes.add(w)
-        outer.add(self.section("Display", modes))
-
         # Devices
         devices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.device_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.device_list.get_style_context().add_class("frame")
         self.pair_button = Gtk.Button(label="Pair a device…", halign=Gtk.Align.START)
         self.pair_button.connect("clicked", self.on_pair)
+        devices_hint = Gtk.Label(
+            xalign=0, wrap=True, max_width_chars=50,
+            label="Each device shows a screen of its own beside the monitors, or mirrors one "
+                  "of them. The choice is kept for the next time the device connects.")
+        devices_hint.get_style_context().add_class("dim-label")
         devices.add(self.device_list)
+        devices.add(devices_hint)
         devices.add(self.pair_button)
         outer.add(self.section("Devices", devices))
 
@@ -914,8 +972,8 @@ class Window(Gtk.ApplicationWindow):
         outer.add(bottom)
 
         self._updating = False
-        self._last_layout = None
         self._logged_api = None
+        self._device_rows = {}
         self.refresh()
         # No polling: the window asks Hermes when it is opened or focused and
         # after each action; Hermes exiting and the tablet disconnecting arrive
@@ -972,98 +1030,96 @@ class Window(Gtk.ApplicationWindow):
         running = self.hermes.pid() is not None
         api_ok = False
         try:
-            if running:
-                self.app.save_pending_layout()
-            layout = self.app.effective_layout() if running else None
             clients = self.hermes.clients() if running else []
             api_ok = running
             self.status.set_text("Hermes is running." if running else "Hermes is stopped.")
         except HermesNeedsSetup:
-            layout, clients = None, []
+            clients = []
             self.status.set_text("Hermes needs a Web UI account. Open Hermes settings to create one.")
         except HermesError:
-            layout, clients = None, []
+            clients = []
             self.status.set_text("Hermes is starting…" if running else "Hermes is stopped.")
         if not self._busy:
             self.set_start_stop(running)
-        # Pairing and the display mode go through Hermes, so they wait for it.
-        # With several devices connected each has a screen of its own, and
-        # mirroring waits until one is left.
         if api_ok != self._logged_api:
             self._logged_api = api_ok
             log(f"window: Hermes API {'answers' if api_ok else 'does not answer'}")
-        count = self.app.connected_devices() if api_ok else 0
+        # Pairing goes through Hermes, so it waits for it.
         self.pair_button.set_sensitive(api_ok)
-        self.update_mode_controls(api_ok, count)
         self.pair_button.set_tooltip_text(None if api_ok else "Start Hermes first.")
-        # While a switch runs in the background, keep showing what was chosen.
-        if not self.app._switching:
-            if layout == "mirror":
-                self.mirror.set_active(True)
-            elif layout == "extend":
-                self.extend.set_active(True)
+        if api_ok:
+            self.app.clients = clients
         self.fill_devices(clients, api_ok)
         if api_ok and not self.app.display_checked:
             try:
-                self.app.display_checked = self.hermes.ensure_virtual_display()
+                self.app.display_checked = self.app.prepare_hermes()
             except HermesError as e:
                 log(f"could not check the Desktop app: {e}")
         self._api_ok = api_ok
-        self._last_layout = layout
-        self.app.update_indicator(running, layout, several=count > 1)
+        self.app.update_indicator(running)
         self._updating = False
         return True
 
-    def update_mode_controls(self, api_ok, count):
-        """The mode switch, by how many devices have a screen: with several,
-        each has its own, and mirroring waits until one is left. Asks GNOME
-        only, not Hermes, which answers slowly while a device connects."""
-        self.app._shown_device_count = count
-        for w in (self.extend, self.mirror):
-            w.set_sensitive(api_ok and count < 2)
-        self.mode_hint.set_text(SEVERAL_DEVICES_HINT.format(count=count) if count > 1
-                                else MODE_HINT)
-
-    def show_live_layout(self):
-        """Show the mode and how many devices are connected as GNOME has them,
-        without asking Hermes."""
-        try:
-            layout = self.app.mutter.current_layout() if self.app.mutter else None
-        except GLib.Error:
-            layout = None
-        self._updating = True
-        if layout == "mirror":
-            self.mirror.set_active(True)
-        elif layout == "extend":
-            self.extend.set_active(True)
-        self._updating = False
-        count = self.app.connected_devices()
-        self.update_mode_controls(self._api_ok, count)
-        if layout:
-            self._last_layout = layout
-        self.app.update_indicator(self.hermes.pid() is not None, self._last_layout,
-                                  several=count > 1)
-
     def fill_devices(self, clients, api_ok):
+        """One row per paired device: its name, whether it has a screen now, the
+        display mode chosen for it, and Remove."""
+        monitors = self.app.monitor_choices()
         names = [(c.get("uuid"), c.get("name")) for c in clients]
-        if self._shown_devices == (names, api_ok):
+        if self._shown_devices != (names, api_ok, monitors):
+            self._shown_devices = (names, api_ok, monitors)
+            self._device_rows = {}
+            for child in self.device_list.get_children():
+                self.device_list.remove(child)
+            if not clients:
+                text = "No paired devices." if api_ok else "Start Hermes to see paired devices."
+                label = Gtk.Label(label=text, xalign=0, margin=10)
+                label.get_style_context().add_class("dim-label")
+                self.device_list.add(label)
+            for client in clients:
+                row = Gtk.Box(spacing=12, margin=6)
+                names_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                names_box.add(Gtk.Label(label=client.get("name") or "Unnamed device", xalign=0))
+                status = Gtk.Label(xalign=0)
+                status.get_style_context().add_class("dim-label")
+                names_box.add(status)
+                row.pack_start(names_box, True, True, 4)
+                mode = Gtk.ComboBoxText()
+                mode.append("extend", "Separate screen")
+                for connector, label in monitors:
+                    mode.append(f"mirror:{connector}", f"Mirror {label}")
+                mode.connect("changed", self.on_device_mode, client)
+                row.pack_start(mode, False, False, 0)
+                remove = Gtk.Button(label="Remove")
+                remove.connect("clicked", self.on_remove, client)
+                row.pack_end(remove, False, False, 0)
+                self.device_list.add(row)
+                self._device_rows[client.get("uuid")] = (status, mode)
+            self.device_list.show_all()
+        self.update_device_rows()
+
+    def update_device_rows(self):
+        """Show which devices have a screen now and the mode chosen for each.
+        Asks GNOME only, not Hermes, which answers slowly while a device connects."""
+        updating = self._updating
+        self._updating = True
+        screens = self.app.device_screens()
+        for uuid, (status, mode) in self._device_rows.items():
+            connected = uuid in screens
+            status.set_text("Connected" if connected else "Not connected")
+            mode.set_active_id(self.app.chosen_mode(uuid))
+            if mode.get_active_id() is None:
+                mode.set_active_id("extend")
+            # The mode is chosen for a device on screen; it is kept for the
+            # next time the device connects.
+            mode.set_sensitive(connected)
+            mode.set_tooltip_text("What this device shows" if connected else
+                                  "Connect the device in Moonlight to choose what it shows.")
+        self._updating = updating
+
+    def on_device_mode(self, combo, client):
+        if self._updating or combo.get_active_id() is None:
             return
-        self._shown_devices = (names, api_ok)
-        for child in self.device_list.get_children():
-            self.device_list.remove(child)
-        if not clients:
-            text = "No paired devices." if api_ok else "Start Hermes to see paired devices."
-            label = Gtk.Label(label=text, xalign=0, margin=10)
-            label.get_style_context().add_class("dim-label")
-            self.device_list.add(label)
-        for client in clients:
-            row = Gtk.Box(spacing=12, margin=6)
-            row.pack_start(Gtk.Label(label=client.get("name") or "Unnamed device", xalign=0), True, True, 4)
-            remove = Gtk.Button(label="Remove")
-            remove.connect("clicked", self.on_remove, client)
-            row.pack_end(remove, False, False, 0)
-            self.device_list.add(row)
-        self.device_list.show_all()
+        self.app.set_device_mode(client, combo.get_active_id())
 
     def set_start_stop(self, running, busy=None):
         style = self.start_stop.get_style_context()
@@ -1106,13 +1162,6 @@ class Window(Gtk.ApplicationWindow):
             return False
 
         threading.Thread(target=work, daemon=True).start()
-
-    def on_mode(self, button):
-        if self._updating:
-            return
-        layout = "extend" if self.extend.get_active() else "mirror"
-        if not self.app.set_layout(layout, source="window"):
-            self.refresh()
 
     def on_pair(self, *_):
         dialog = PairDialog(self)
@@ -1182,6 +1231,7 @@ class Window(Gtk.ApplicationWindow):
         if dialog.run() == Gtk.ResponseType.OK:
             try:
                 self.hermes.unpair(client.get("uuid", ""))
+                self.app.modes.forget(client.get("uuid"))
             except HermesError as e:
                 self.message(str(e))
         dialog.destroy()
@@ -1249,11 +1299,11 @@ class App(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.hermes = Hermes()
-        self.pending_layout = None
-        self._shown_device_count = 0
-        self._fitted_count = 0
-        self._auto_extended = False
-        self._logged_tablets = None
+        self.modes = DeviceModes()
+        # Paired devices as the window last got them from Hermes.
+        self.clients = []
+        self._shown_screens = None
+        self._applied_screens = None
         self._switching = False
         self.display_checked = False
         try:
@@ -1269,7 +1319,6 @@ class App(Gtk.Application):
         self.start_hermes_at_launch = False
         self.indicator = None
         self._indicator_items = {}
-        self._indicator_updating = False
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -1324,13 +1373,6 @@ class App(Gtk.Application):
         item("Open Screen Spawner", lambda *_: self.do_activate())
         self._indicator_items["start_stop"] = item("Start Hermes", lambda *_: self.window.on_start_stop())
         menu.append(Gtk.SeparatorMenuItem())
-        extend = Gtk.RadioMenuItem(label="Extended")
-        mirror = Gtk.RadioMenuItem(label="Mirrored", group=extend)
-        extend.connect("toggled", lambda w: self._indicator_mode("extend" if w.get_active() else "mirror"))
-        menu.append(extend)
-        menu.append(mirror)
-        self._indicator_items["extend"], self._indicator_items["mirror"] = extend, mirror
-        menu.append(Gtk.SeparatorMenuItem())
         item("Hermes settings", lambda *_: self.open_settings())
         item("Quit", lambda *_: self.quit_all())
         menu.show_all()
@@ -1347,83 +1389,157 @@ class App(Gtk.Application):
             if self.hermes._process is process:
                 self.hermes._process = None
             self.hermes._pid = None
-            self.update_indicator(False, None)
+            self.update_indicator(False)
             if self.window and self.window.get_visible() and not self.window._busy:
                 self.window.refresh()
 
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, process.pid, exited)
 
-    def connected_devices(self):
-        """How many devices have a virtual screen now."""
+    def device_screens(self):
+        """{device UUID: connector of its screen} for the devices that have one now."""
         if not self.mutter:
-            return 0
+            return {}
         try:
-            _, monitors, _, _ = self.mutter._call("GetCurrentState")
+            _, monitors, _, _ = self.mutter.state()
         except GLib.Error as e:
             log(f"GNOME did not report the monitors: {e.message}")
-            return 0
-        found = self.mutter.tablets(monitors)
-        names = [spec[0] for spec, _ in found]
-        if names != self._logged_tablets:
-            self._logged_tablets = names
-            log(f"device screens: {', '.join(names) or 'none'} "
-                f"(all monitors: {', '.join(m[0][0] for m in monitors)})")
-        return len(found)
+            return {}
+        screens = {}
+        for client in self.clients:
+            connector = self.mutter.screen_of(client, monitors, self.clients)
+            if connector:
+                screens[client.get("uuid")] = connector
+        found = sorted(spec[0] for spec, _ in self.mutter.screens(monitors))
+        if (found, screens) != self._shown_screens:
+            self._shown_screens = (found, screens)
+            names = {c.get("uuid"): c.get("name") for c in self.clients}
+            log(f"device screens: {', '.join(found) or 'none'}; "
+                + (", ".join(f"{names.get(u)} on {c}" for u, c in screens.items()) or "none matched"))
+        return screens
+
+    def monitor_choices(self):
+        """The monitors a device can mirror, as (connector, name)."""
+        if not self.mutter:
+            return []
+        try:
+            return self.mutter.physical(self.mutter.state()[1])
+        except GLib.Error:
+            return []
+
+    def chosen_mode(self, uuid):
+        """The mode saved for a device, as the window's list names it: "extend"
+        or "mirror:<connector>" ("mirror" alone becomes the primary monitor)."""
+        mode = self.modes.get(uuid)
+        if mode == "mirror" and self.mutter:
+            try:
+                primary = self.mutter.primary_connector(self.mutter.state()[2])
+            except GLib.Error:
+                primary = None
+            return f"mirror:{primary}" if primary else "extend"
+        return mode
+
+    def prepare_hermes(self):
+        """Out of the box the Desktop app streams the laptop's own screen; turn its
+        virtual display on. Each device's mode is applied here, so Hermes always
+        creates the screen extended; a mirrored setting saved in Hermes by an
+        earlier version becomes the default for devices. Only while no device is
+        streaming: saving the app ends it. Returns True when done."""
+        app = self.hermes.desktop_app()
+        if app.get("virtual-display") and app.get("virtual-display-layout") == "extend":
+            return True
+        if self.hermes.app_running():
+            return False
+        if app.get("virtual-display") and app.get("virtual-display-layout") == "mirror":
+            self.modes.set_default("mirror")
+            log("Hermes mirrored by default: that is now the default for devices")
+        app["virtual-display"] = True
+        app["virtual-display-layout"] = "extend"
+        if not self.hermes.post("/api/apps", app).get("status"):
+            raise HermesError("Hermes did not save the Desktop app.")
+        log("the Desktop app creates an extended virtual display")
+        return True
 
     def on_monitors_changed(self):
-        """A monitor came or went. If the tablet left with a mode switched live,
-        Hermes can now save it without cutting a stream. The window shows whether
-        the mode can be switched, which depends on how many devices are connected."""
-        if self.pending_layout and not self.mutter.connected():
-            GLib.timeout_add_seconds(2, lambda: self.save_pending_layout() and False)
-        count = self.connected_devices()
-        if count != self._shown_device_count and self.window:
-            self.window.update_mode_controls(self.window._api_ok, count)
-            self.update_indicator(self.hermes.pid() is not None, self.window._last_layout,
-                                  several=count > 1)
-        if count != self._fitted_count:
-            self._fitted_count = count
-            # After Hermes has set up the new screen: it mirrors it itself when
-            # mirroring is the saved mode.
-            GLib.timeout_add_seconds(2, self.fit_layout_to_devices)
+        """A monitor came or went: show which devices have a screen, and give a
+        new screen the mode chosen for its device. GNOME rebuilds the layout
+        when a monitor arrives, which also undoes other screens' mirroring, so
+        every device gets its mode again."""
+        if self.window:
+            self.window.update_device_rows()
+        found = None
+        if self.mutter:
+            try:
+                found = sorted(spec[0] for spec, _ in self.mutter.screens(self.mutter.state()[1]))
+            except GLib.Error:
+                pass
+        if found != self._applied_screens:
+            self._applied_screens = found
+            if found:
+                # After Hermes has set the new screen up.
+                GLib.timeout_add_seconds(2, self.apply_device_modes)
 
-    def fit_layout_to_devices(self):
-        """Several devices each get a screen of their own: GNOME drops an earlier
-        mirror when a monitor arrives, and Hermes mirrors only the newest one.
-        Once one device is left, it is mirrored again if this app extended it
-        and mirroring is the chosen mode."""
-        if self._switching or not self.mutter:
+    def apply_device_modes(self, only=None):
+        """Put each connected device's screen into its chosen mode (or only the
+        device with UUID `only`). In the background: GNOME takes a moment."""
+        if not self.mutter:
+            return False
+        if self._switching:
+            # Again once the switch running now is done.
+            GLib.timeout_add_seconds(1, self.apply_device_modes, only)
             return False
         self._switching = True
+        clients = list(self.clients)
 
         def work():
+            errors = []
             try:
-                count = self.mutter.connected_count()
-                live = self.mutter.current_layout()
-                if count > 1 and live == "mirror":
-                    want = "extend"
-                elif count == 1 and live == "extend" and self._auto_extended and \
-                        (self.pending_layout or self.hermes.layout()) == "mirror":
-                    want = "mirror"
-                else:
-                    return
-                log(f"{count} device(s) connected: switching to {want}")
-                self.mutter.apply(want)
-                self._auto_extended = want == "extend"
-            except (HermesError, GLib.Error) as e:
-                log(f"could not fit the mode to the devices: {e}")
-            finally:
-                GLib.idle_add(done)
+                _, monitors, _, _ = self.mutter.state()
+                known = {c.get("uuid") for c in clients}
+                if any(self.mutter.screen_of(c, monitors, clients) is None and c.get("connected")
+                       for c in clients) or len(self.mutter.screens(monitors)) > len(known):
+                    # A device paired or connected since the window last asked.
+                    try:
+                        clients[:] = self.hermes.clients()
+                    except HermesError:
+                        pass
+                for client in clients:
+                    if only and client.get("uuid") != only:
+                        continue
+                    _, monitors, logical, _ = self.mutter.state()
+                    connector = self.mutter.screen_of(client, monitors, clients)
+                    if not connector:
+                        continue
+                    want = self.mutter.resolve(self.modes.get(client.get("uuid")), monitors, logical)
+                    if self.mutter.layout_of(connector, logical) == want:
+                        continue
+                    log(f"{client.get('name')}: {want} on {connector}")
+                    try:
+                        self.mutter.apply_device(connector, want)
+                    except (HermesError, GLib.Error) as e:
+                        log(f"{client.get('name')}: could not switch: {e}")
+                        errors.append(f"{client.get('name')}: {e}")
+            except GLib.Error as e:
+                log(f"could not apply the device modes: {e.message}")
+            GLib.idle_add(done, clients, errors)
 
-        def done():
-            # GNOME only: Hermes answers slowly while the stream adapts.
+        def done(clients, errors):
             self._switching = False
+            self.clients = clients
             if self.window:
-                self.window.show_live_layout()
+                self.window.update_device_rows()
+                if errors and only and self.window.get_visible():
+                    self.window.message("\n".join(errors))
             return False
 
         threading.Thread(target=work, daemon=True).start()
         return False
+
+    def set_device_mode(self, client, mode):
+        """The user chose a mode for a device: keep it, and apply it now if the
+        device is connected."""
+        log(f"user chose {mode} for {client.get('name')}")
+        self.modes.set(client.get("uuid"), mode)
+        self.apply_device_modes(only=client.get("uuid"))
 
     def quit_all(self):
         """Stop Hermes, then close the app: Hermes must not run on without it."""
@@ -1443,125 +1559,10 @@ class App(Gtk.Application):
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _indicator_mode(self, layout):
-        if not self._indicator_updating:
-            self.set_layout(layout, source="top bar menu")
-
-    def update_indicator(self, running, layout, several=False):
+    def update_indicator(self, running):
         if not self.indicator:
             return
-        self._indicator_updating = True
         self._indicator_items["start_stop"].set_label("Stop Hermes" if running else "Start Hermes")
-        for key in ("extend", "mirror"):
-            self._indicator_items[key].set_sensitive(layout is not None and not several)
-        if layout in ("extend", "mirror"):
-            self._indicator_items[layout].set_active(True)
-        self._indicator_updating = False
-
-    def effective_layout(self):
-        """The mode the tablet is in now if it is connected (what GNOME shows),
-        otherwise the one the next connection gets."""
-        if self.mutter:
-            try:
-                live = self.mutter.current_layout()
-                if live:
-                    return live
-            except GLib.Error:
-                pass
-        return self.pending_layout or self.hermes.layout()
-
-    def save_pending_layout(self):
-        """Save a mode applied live once no device is streaming: saving makes Hermes
-        end the Desktop app, which would cut a running stream."""
-        if not self.pending_layout:
-            return
-        try:
-            sessions = self.hermes.get("/api/metrics").get("sessions") or {}
-            if int(sessions.get("active") or 0) > 0:
-                return
-            self.hermes.set_layout(self.pending_layout)
-            self.pending_layout = None
-        except HermesError:
-            pass
-
-    def set_layout(self, layout, source=""):
-        """Apply the display mode. Returns False if it was not changed."""
-        # A connected tablet is switched through GNOME alone, in the background,
-        # with nothing asked of Hermes first: right after the switch Hermes is
-        # busy recreating its encoder and answers slowly. Hermes is told later;
-        # saving now would end the stream anyway.
-        if self.mutter and not self._switching:
-            self._switching = True
-
-            def work():
-                try:
-                    result = self.mutter.apply(layout)
-                except (HermesError, GLib.Error) as e:
-                    result = e
-                GLib.idle_add(done, result)
-
-            def done(result):
-                self._switching = False
-                if isinstance(result, Exception):
-                    log(f"switch to {layout} failed: {result}")
-                    if self.window:
-                        self.window.message(str(result))
-                elif result:
-                    self.pending_layout = layout
-                    # Save once the stream has settled, and refresh the window then.
-                    GLib.timeout_add_seconds(2, self._after_switch)
-                    return False
-                else:
-                    # No tablet connected: there is nothing to switch live.
-                    self._set_layout_in_hermes(layout)
-                if self.window:
-                    self.window.refresh()
-                return False
-
-            log(f"user chose {layout}" + (f" in the {source}" if source else ""))
-            self._auto_extended = False
-            threading.Thread(target=work, daemon=True).start()
-            return True
-        if self._switching:
-            return True
-        return self._set_layout_in_hermes(layout)
-
-    def _after_switch(self):
-        threading.Thread(target=self.save_pending_layout, daemon=True).start()
-        if self.window and self.window.get_visible():
-            self.window.refresh()
-        return False
-
-    def _set_layout_in_hermes(self, layout):
-        try:
-            if self.hermes.layout() == layout:
-                return True
-            # Hermes ends the running Desktop app when its settings are saved,
-            # and the mode only applies when the virtual display is created.
-            if self.hermes.app_running() and not self.confirm_reconnect(layout):
-                return False
-            self.hermes.set_layout(layout)
-            self.pending_layout = None
-        except (HermesError, GLib.Error) as e:
-            if self.window:
-                self.window.message(str(e))
-            return False
-        finally:
-            if self.window:
-                GLib.idle_add(lambda: self.window.refresh() and False)
-        return True
-
-    def confirm_reconnect(self, layout):
-        mode = "mirrored" if layout == "mirror" else "extended"
-        dialog = Gtk.MessageDialog(
-            transient_for=self.window, modal=True, message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.NONE, text=f"Switch to the {mode} display now?",
-            secondary_text=("The tablet is disconnected to apply it. Connect again in "
-                            "Moonlight to see the new mode."))
-        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Switch", Gtk.ResponseType.OK)
-        answer = dialog.run()
-        dialog.destroy()
-        return answer == Gtk.ResponseType.OK
 
     @staticmethod
     def open_settings():
