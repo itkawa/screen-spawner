@@ -59,6 +59,12 @@ AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", "screen-s
 HIDDEN_ARG = "--hidden"
 START_ARG = "--start"
 EVDI_COUNT = "/sys/devices/evdi/count"
+# Where install.sh keeps the number of EVDI devices made at boot.
+EVDI_CONFIG = "/etc/modprobe.d/evdi.conf"
+# The choices offered for "Devices at once". The driver allows 16 for the whole
+# system, DisplayLink docks included; Wi-Fi and the graphics card limit
+# streaming to a few devices anyway.
+EVDI_DEVICE_CHOICES = range(1, 9)
 # The display mode chosen for each device (see DeviceModes).
 DEVICES_FILE = os.path.join(GLib.get_user_config_dir(), "screen-spawner", "devices.json")
 
@@ -71,6 +77,46 @@ def evdi_device_count():
             return int(f.read().strip() or 0)
     except (OSError, ValueError):
         return 0
+
+
+def evdi_devices_at_boot():
+    """The number of EVDI devices the driver will make at the next start, from
+    the module options (the last one counts), or None if none is set."""
+    modprobe = shutil.which("modprobe") or "/sbin/modprobe"
+    try:
+        out = subprocess.run([modprobe, "-c"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = None
+    for line in out.splitlines():
+        words = line.split()
+        if words[:2] == ["options", "evdi"]:
+            for word in words[2:]:
+                if word.startswith("initial_device_count="):
+                    try:
+                        found = int(word.partition("=")[2])
+                    except ValueError:
+                        pass
+    return found
+
+
+def set_evdi_devices_at_boot(count):
+    """Write the number of EVDI devices for the next start. Asks for the
+    administrator password through polkit. Returns True if written."""
+    if count not in EVDI_DEVICE_CHOICES:
+        raise ValueError(count)
+    try:
+        result = subprocess.run(["pkexec", "/usr/bin/tee", EVDI_CONFIG],
+                                input=f"options evdi initial_device_count={count}\n",
+                                text=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except OSError as e:
+        raise HermesError(f"Could not ask for the administrator password: {e}")
+    if result.returncode in (126, 127):
+        return False   # the password dialog was dismissed or refused
+    if result.returncode != 0:
+        raise HermesError(f"Could not write {EVDI_CONFIG}: {result.stderr.strip()}")
+    log(f"EVDI devices at the next start: {count}")
+    return True
 
 
 def evdi_problem():
@@ -1054,7 +1100,24 @@ class Window(Gtk.ApplicationWindow):
         devices_hint.get_style_context().add_class("dim-label")
         devices.add(self.device_list)
         devices.add(devices_hint)
-        devices.add(self.pair_button)
+        bottom_row = Gtk.Box(spacing=12)
+        bottom_row.pack_start(self.pair_button, False, False, 0)
+        # How many devices can connect at the same time: the EVDI devices the
+        # driver makes when the computer starts.
+        slots = Gtk.Box(spacing=6)
+        slots.pack_start(Gtk.Label(label="Devices at once:"), False, False, 0)
+        self.slots = Gtk.ComboBoxText()
+        for count in EVDI_DEVICE_CHOICES:
+            self.slots.append(str(count), str(count))
+        self.slots.set_tooltip_text("How many devices can connect at the same time. "
+                                    "A change takes effect after you restart the computer.")
+        self.slots.connect("changed", self.on_slots)
+        slots.pack_start(self.slots, False, False, 0)
+        self.slots_note = Gtk.Label(xalign=0)
+        self.slots_note.get_style_context().add_class("dim-label")
+        slots.pack_start(self.slots_note, False, False, 0)
+        bottom_row.pack_end(slots, False, False, 0)
+        devices.add(bottom_row)
         outer.add(self.section("Devices", devices))
 
         login = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, border_width=10)
@@ -1093,6 +1156,7 @@ class Window(Gtk.ApplicationWindow):
         self._updating = False
         self._logged_api = None
         self._device_rows = {}
+        self.show_slots()
         self.refresh()
         # No polling: the window asks Hermes when it is opened or focused and
         # after each action; Hermes exiting and the tablet disconnecting arrive
@@ -1254,6 +1318,40 @@ class Window(Gtk.ApplicationWindow):
         if self._updating or not button.get_active():
             return
         self.app.set_shared_choice(choice)
+
+    def show_slots(self):
+        """The number of devices at once: what the driver will make at the next
+        start, and, if that differs, how many there are now."""
+        self._slots_updating = True
+        at_boot = evdi_devices_at_boot()
+        now = evdi_device_count()
+        shown = at_boot if at_boot in EVDI_DEVICE_CHOICES else now
+        self.slots.set_active_id(str(shown) if shown in EVDI_DEVICE_CHOICES else None)
+        if at_boot is not None and at_boot != now:
+            self.slots_note.set_text(f"{now} until restart")
+        else:
+            self.slots_note.set_text("")
+        self._slots_updating = False
+
+    def on_slots(self, combo):
+        if getattr(self, "_slots_updating", False) or combo.get_active_id() is None:
+            return
+        count = int(combo.get_active_id())
+        if count == evdi_devices_at_boot():
+            return
+        log(f"user chose {count} devices at once")
+        try:
+            written = set_evdi_devices_at_boot(count)
+        except HermesError as e:
+            self.message(str(e))
+            written = False
+        if written and evdi_devices_at_boot() != count:
+            self.message(f"Another file in /etc/modprobe.d sets the number of EVDI devices, so "
+                         f"{evdi_devices_at_boot()} still applies. Remove that setting to use {count}.")
+        elif written:
+            self.message(f"{count} devices can connect at once after you restart the computer.",
+                         Gtk.MessageType.INFO)
+        self.show_slots()
 
     def on_device_mode(self, combo, client):
         if self._updating or combo.get_active_id() is None:

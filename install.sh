@@ -187,15 +187,20 @@ if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
     apt_install evdi-dkms "$EVDI_LIB" "$EVDI_DEV"
 fi
 
-# EVDI must provide at least one pre-created virtual DRM device.
-# This allows Hermes to use an existing device without requiring
-# root access to /sys/devices/evdi/add.
+# EVDI creates its devices when it loads, one per device that can connect
+# at once: Hermes uses an existing device without root access to
+# /sys/devices/evdi/add, and adding one later, with the desktop running,
+# makes X11 take it for a new graphics card. An unused device costs nothing.
+# 1 was the number before Screen Spawner 0.3.0; any other number was chosen
+# in the app (Devices at once) and stays.
 EVDI_MODPROBE_CONFIG="/etc/modprobe.d/evdi.conf"
+EVDI_DEVICES=4
+EVDI_RESTART_NOTE=0
+evdi_devices_now=$(sed -n 's/^options evdi initial_device_count=\([0-9]\+\)$/\1/p' \
+    "$EVDI_MODPROBE_CONFIG" 2>/dev/null | tail -n 1)
 
-if [ ! -f "$EVDI_MODPROBE_CONFIG" ] || \
-   ! grep -qxF 'options evdi initial_device_count=1' "$EVDI_MODPROBE_CONFIG"; then
-
-    echo "Configuring EVDI with one initial virtual display..."
+if [ -z "$evdi_devices_now" ] || [ "$evdi_devices_now" = 1 ]; then
+    echo "Configuring EVDI for $EVDI_DEVICES devices at once..."
 
     if [ -f "$EVDI_MODPROBE_CONFIG" ]; then
         backup_file "$EVDI_MODPROBE_CONFIG"
@@ -203,7 +208,14 @@ if [ ! -f "$EVDI_MODPROBE_CONFIG" ] || \
         record rootfile "$EVDI_MODPROBE_CONFIG"
     fi
 
-    echo 'options evdi initial_device_count=1' | sudo tee "$EVDI_MODPROBE_CONFIG" >/dev/null
+    echo "options evdi initial_device_count=$EVDI_DEVICES" | sudo tee "$EVDI_MODPROBE_CONFIG" >/dev/null
+else
+    EVDI_DEVICES=$evdi_devices_now
+fi
+# Loaded earlier with fewer devices: the new number applies from the next start.
+if lsmod | grep -q '^evdi' && \
+   [ "$(cat /sys/devices/evdi/count 2>/dev/null || echo 0)" -lt "$EVDI_DEVICES" ]; then
+    EVDI_RESTART_NOTE=1
 fi
 
 if ! lsmod | grep -q '^evdi'; then
@@ -791,6 +803,12 @@ next_step_heading() {
         printf '%s\n' "$1"
     fi
 }
+
+if [ "$EVDI_RESTART_NOTE" = 1 ]; then
+    next_step_heading "Restart the computer:"
+    echo "EVDI makes room for $EVDI_DEVICES devices at once when the computer starts."
+    echo "Until then, fewer devices can connect at the same time."
+fi
 
 next_step_heading "Start:"
 echo "Open Screen Spawner from the application menu and press Start."
