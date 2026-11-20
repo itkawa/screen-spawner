@@ -1057,7 +1057,7 @@ class Window(Gtk.ApplicationWindow):
         devices.add(self.pair_button)
         outer.add(self.section("Devices", devices))
 
-        login = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        login = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, border_width=10)
         self.autostart = Gtk.CheckButton(label="Open Screen Spawner at login, in the top bar")
         self.autostart.set_tooltip_text("Without this, Hermes starts only when you press Start.")
         self.autostart_start = Gtk.CheckButton(label="Start Hermes too", margin_start=24)
@@ -1068,7 +1068,11 @@ class Window(Gtk.ApplicationWindow):
         self.autostart_start.connect("toggled", self.on_autostart)
         login.add(self.autostart)
         login.add(self.autostart_start)
-        outer.add(self.section("At login", login))
+        # Framed, like the device list, so it reads as a block of its own and
+        # not as more display settings.
+        login_frame = Gtk.Frame()
+        login_frame.add(login)
+        outer.add(self.section("At login", login_frame))
 
         # Bottom buttons
         bottom = Gtk.Box(spacing=12)
