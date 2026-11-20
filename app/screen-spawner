@@ -58,6 +58,20 @@ LOG_FILE = os.path.join(STATE_DIR, "app.log")
 AUTOSTART_FILE = os.path.join(GLib.get_user_config_dir(), "autostart", "screen-spawner.desktop")
 HIDDEN_ARG = "--hidden"
 START_ARG = "--start"
+EVDI_COUNT = "/sys/devices/evdi/count"
+MODE_HINT = "Switches a connected tablet at once."
+SEVERAL_DEVICES_HINT = ("{count} devices are connected, each with its own screen. "
+                        "Mirroring works while one device is connected.")
+
+
+def evdi_device_count():
+    """EVDI devices the system has: one virtual screen each. The installer makes
+    them at boot; a second device is what lets a second tablet get its own screen."""
+    try:
+        with open(EVDI_COUNT) as f:
+            return int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
 
 
 def log(message):
@@ -179,6 +193,10 @@ class Hermes:
         # (which a source build shows as a generic icon) would only confuse.
         # A command-line option overrides the config file without changing it.
         command = [*command, "system_tray=false"]
+        # With more than one EVDI device, each tablet gets a screen of its own
+        # instead of all of them sharing the first one.
+        if evdi_device_count() > 1:
+            command.append("hermes_kms_multi_output=true")
         log("starting Hermes: " + " ".join(command))
         self._process = subprocess.Popen(
             command, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -355,15 +373,26 @@ class Mutter:
                     names.append(entry[len(card) + 1:])
         return names
 
-    def tablet(self, monitors):
-        """The monitor of the virtual display. X11 names an output of a second GPU
-        with a suffix, so DVI-I-1 appears as DVI-I-1-1."""
+    def tablets(self, monitors):
+        """The monitors of the virtual displays, one per connected device. X11
+        names an output of a second GPU with a suffix, so DVI-I-1 appears as
+        DVI-I-1-1."""
         connectors = self.evdi_connectors()
-        for spec, modes, props in monitors:
-            name = spec[0]
-            if any(name == c or name.startswith(c + "-") for c in connectors):
-                return spec, modes
-        return None, None
+        return [(spec, modes) for spec, modes, _props in monitors
+                if any(spec[0] == c or spec[0].startswith(c + "-") for c in connectors)]
+
+    def tablet(self, monitors):
+        """The monitor of the virtual display when one device is connected."""
+        found = self.tablets(monitors)
+        return found[0] if found else (None, None)
+
+    def connected_count(self):
+        """How many devices have a virtual screen now."""
+        try:
+            _, monitors, _, _ = self._call("GetCurrentState")
+        except GLib.Error:
+            return 0
+        return len(self.tablets(monitors))
 
     @staticmethod
     def current_mode(modes):
@@ -373,22 +402,19 @@ class Mutter:
         return None
 
     def connected(self):
-        try:
-            _, monitors, _, _ = self._call("GetCurrentState")
-        except GLib.Error:
-            return False
-        return self.tablet(monitors)[0] is not None
+        return self.connected_count() > 0
 
     def current_layout(self):
-        """'mirror' or 'extend' as GNOME has the tablet now, or None if it is not connected."""
+        """'mirror' or 'extend' as GNOME has the tablets now, or None if none is
+        connected. 'mirror' if any of them mirrors another monitor."""
         _, monitors, logical, _ = self._call("GetCurrentState")
-        spec, _ = self.tablet(monitors)
-        if spec is None:
+        names = {spec[0] for spec, _ in self.tablets(monitors)}
+        if not names:
             return None
         for *_, specs, _props in logical:
-            if any(s[0] == spec[0] for s in specs):
-                return "mirror" if len(specs) > 1 else "extend"
-        return None
+            if len(specs) > 1 and any(s[0] in names for s in specs):
+                return "mirror"
+        return "extend"
 
     def apply(self, layout):
         """Switch the connected tablet, check that GNOME did, and try once more if not.
@@ -398,6 +424,9 @@ class Mutter:
             return False
         if current == layout:
             return True
+        count = self.connected_count()
+        if count > 1 and layout == "mirror":
+            raise HermesError(SEVERAL_DEVICES_HINT.format(count=count))
         for attempt in (1, 2):
             try:
                 if not self._apply_once(layout):
@@ -419,9 +448,14 @@ class Mutter:
 
     def _apply_once(self, layout):
         serial, monitors, logical, props = self._call("GetCurrentState")
-        spec, modes = self.tablet(monitors)
-        if spec is None:
+        found = self.tablets(monitors)
+        if not found:
             return False
+        spec, modes = found[0]
+        if layout == "extend":
+            # With several devices, the one to move out is the one mirroring.
+            mirrored = {s[0] for *_, specs, _props in logical if len(specs) > 1 for s in specs}
+            spec, modes = next(((s, m) for s, m in found if s[0] in mirrored), found[0])
         by_connector = {m[0][0]: m for m in monitors}
         scale_logical = props.get("layout-mode") == 1   # 1: logical, 2: physical
 
@@ -834,8 +868,7 @@ class Window(Gtk.ApplicationWindow):
         self.extend = Gtk.RadioButton.new_with_label(None, "Extended: the tablet is a separate screen")
         self.mirror = Gtk.RadioButton.new_with_label_from_widget(self.extend, "Mirrored: the tablet shows the main screen")
         self.extend.connect("toggled", self.on_mode)
-        self.mode_hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=50,
-                                   label="Switches a connected tablet at once.")
+        self.mode_hint = Gtk.Label(xalign=0, wrap=True, max_width_chars=50, label=MODE_HINT)
         self.mode_hint.get_style_context().add_class("dim-label")
         for w in (self.extend, self.mirror, self.mode_hint):
             modes.add(w)
@@ -882,6 +915,7 @@ class Window(Gtk.ApplicationWindow):
 
         self._updating = False
         self._last_layout = None
+        self._logged_api = None
         self.refresh()
         # No polling: the window asks Hermes when it is opened or focused and
         # after each action; Hermes exiting and the tablet disconnecting arrive
@@ -953,8 +987,14 @@ class Window(Gtk.ApplicationWindow):
         if not self._busy:
             self.set_start_stop(running)
         # Pairing and the display mode go through Hermes, so they wait for it.
-        for w in (self.extend, self.mirror, self.pair_button):
-            w.set_sensitive(api_ok)
+        # With several devices connected each has a screen of its own, and
+        # mirroring waits until one is left.
+        if api_ok != self._logged_api:
+            self._logged_api = api_ok
+            log(f"window: Hermes API {'answers' if api_ok else 'does not answer'}")
+        count = self.app.connected_devices() if api_ok else 0
+        self.pair_button.set_sensitive(api_ok)
+        self.update_mode_controls(api_ok, count)
         self.pair_button.set_tooltip_text(None if api_ok else "Start Hermes first.")
         # While a switch runs in the background, keep showing what was chosen.
         if not self.app._switching:
@@ -970,9 +1010,39 @@ class Window(Gtk.ApplicationWindow):
                 log(f"could not check the Desktop app: {e}")
         self._api_ok = api_ok
         self._last_layout = layout
-        self.app.update_indicator(running, layout)
+        self.app.update_indicator(running, layout, several=count > 1)
         self._updating = False
         return True
+
+    def update_mode_controls(self, api_ok, count):
+        """The mode switch, by how many devices have a screen: with several,
+        each has its own, and mirroring waits until one is left. Asks GNOME
+        only, not Hermes, which answers slowly while a device connects."""
+        self.app._shown_device_count = count
+        for w in (self.extend, self.mirror):
+            w.set_sensitive(api_ok and count < 2)
+        self.mode_hint.set_text(SEVERAL_DEVICES_HINT.format(count=count) if count > 1
+                                else MODE_HINT)
+
+    def show_live_layout(self):
+        """Show the mode and how many devices are connected as GNOME has them,
+        without asking Hermes."""
+        try:
+            layout = self.app.mutter.current_layout() if self.app.mutter else None
+        except GLib.Error:
+            layout = None
+        self._updating = True
+        if layout == "mirror":
+            self.mirror.set_active(True)
+        elif layout == "extend":
+            self.extend.set_active(True)
+        self._updating = False
+        count = self.app.connected_devices()
+        self.update_mode_controls(self._api_ok, count)
+        if layout:
+            self._last_layout = layout
+        self.app.update_indicator(self.hermes.pid() is not None, self._last_layout,
+                                  several=count > 1)
 
     def fill_devices(self, clients, api_ok):
         names = [(c.get("uuid"), c.get("name")) for c in clients]
@@ -1041,7 +1111,7 @@ class Window(Gtk.ApplicationWindow):
         if self._updating:
             return
         layout = "extend" if self.extend.get_active() else "mirror"
-        if not self.app.set_layout(layout):
+        if not self.app.set_layout(layout, source="window"):
             self.refresh()
 
     def on_pair(self, *_):
@@ -1180,6 +1250,10 @@ class App(Gtk.Application):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.hermes = Hermes()
         self.pending_layout = None
+        self._shown_device_count = 0
+        self._fitted_count = 0
+        self._auto_extended = False
+        self._logged_tablets = None
         self._switching = False
         self.display_checked = False
         try:
@@ -1279,11 +1353,77 @@ class App(Gtk.Application):
 
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, process.pid, exited)
 
+    def connected_devices(self):
+        """How many devices have a virtual screen now."""
+        if not self.mutter:
+            return 0
+        try:
+            _, monitors, _, _ = self.mutter._call("GetCurrentState")
+        except GLib.Error as e:
+            log(f"GNOME did not report the monitors: {e.message}")
+            return 0
+        found = self.mutter.tablets(monitors)
+        names = [spec[0] for spec, _ in found]
+        if names != self._logged_tablets:
+            self._logged_tablets = names
+            log(f"device screens: {', '.join(names) or 'none'} "
+                f"(all monitors: {', '.join(m[0][0] for m in monitors)})")
+        return len(found)
+
     def on_monitors_changed(self):
         """A monitor came or went. If the tablet left with a mode switched live,
-        Hermes can now save it without cutting a stream."""
+        Hermes can now save it without cutting a stream. The window shows whether
+        the mode can be switched, which depends on how many devices are connected."""
         if self.pending_layout and not self.mutter.connected():
             GLib.timeout_add_seconds(2, lambda: self.save_pending_layout() and False)
+        count = self.connected_devices()
+        if count != self._shown_device_count and self.window:
+            self.window.update_mode_controls(self.window._api_ok, count)
+            self.update_indicator(self.hermes.pid() is not None, self.window._last_layout,
+                                  several=count > 1)
+        if count != self._fitted_count:
+            self._fitted_count = count
+            # After Hermes has set up the new screen: it mirrors it itself when
+            # mirroring is the saved mode.
+            GLib.timeout_add_seconds(2, self.fit_layout_to_devices)
+
+    def fit_layout_to_devices(self):
+        """Several devices each get a screen of their own: GNOME drops an earlier
+        mirror when a monitor arrives, and Hermes mirrors only the newest one.
+        Once one device is left, it is mirrored again if this app extended it
+        and mirroring is the chosen mode."""
+        if self._switching or not self.mutter:
+            return False
+        self._switching = True
+
+        def work():
+            try:
+                count = self.mutter.connected_count()
+                live = self.mutter.current_layout()
+                if count > 1 and live == "mirror":
+                    want = "extend"
+                elif count == 1 and live == "extend" and self._auto_extended and \
+                        (self.pending_layout or self.hermes.layout()) == "mirror":
+                    want = "mirror"
+                else:
+                    return
+                log(f"{count} device(s) connected: switching to {want}")
+                self.mutter.apply(want)
+                self._auto_extended = want == "extend"
+            except (HermesError, GLib.Error) as e:
+                log(f"could not fit the mode to the devices: {e}")
+            finally:
+                GLib.idle_add(done)
+
+        def done():
+            # GNOME only: Hermes answers slowly while the stream adapts.
+            self._switching = False
+            if self.window:
+                self.window.show_live_layout()
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+        return False
 
     def quit_all(self):
         """Stop Hermes, then close the app: Hermes must not run on without it."""
@@ -1305,15 +1445,15 @@ class App(Gtk.Application):
 
     def _indicator_mode(self, layout):
         if not self._indicator_updating:
-            self.set_layout(layout)
+            self.set_layout(layout, source="top bar menu")
 
-    def update_indicator(self, running, layout):
+    def update_indicator(self, running, layout, several=False):
         if not self.indicator:
             return
         self._indicator_updating = True
         self._indicator_items["start_stop"].set_label("Stop Hermes" if running else "Start Hermes")
         for key in ("extend", "mirror"):
-            self._indicator_items[key].set_sensitive(layout is not None)
+            self._indicator_items[key].set_sensitive(layout is not None and not several)
         if layout in ("extend", "mirror"):
             self._indicator_items[layout].set_active(True)
         self._indicator_updating = False
@@ -1344,7 +1484,7 @@ class App(Gtk.Application):
         except HermesError:
             pass
 
-    def set_layout(self, layout):
+    def set_layout(self, layout, source=""):
         """Apply the display mode. Returns False if it was not changed."""
         # A connected tablet is switched through GNOME alone, in the background,
         # with nothing asked of Hermes first: right after the switch Hermes is
@@ -1378,7 +1518,8 @@ class App(Gtk.Application):
                     self.window.refresh()
                 return False
 
-            log(f"user chose {layout}")
+            log(f"user chose {layout}" + (f" in the {source}" if source else ""))
+            self._auto_extended = False
             threading.Thread(target=work, daemon=True).start()
             return True
         if self._switching:
