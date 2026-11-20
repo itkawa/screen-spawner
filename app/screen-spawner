@@ -73,6 +73,23 @@ def evdi_device_count():
         return 0
 
 
+def evdi_problem():
+    """Why Hermes could not make a screen for a device now, or None. After a
+    system update the EVDI driver may not have been built for the new kernel;
+    the computer works on, only the tablet cannot connect."""
+    if not os.path.isdir("/sys/module/evdi"):
+        return ("The EVDI driver is not loaded, so Hermes cannot make a screen for a device.\n\n"
+                "In a terminal, try:\n    sudo modprobe evdi\n\n"
+                f"If it says the module is not found, it was not built for this kernel "
+                f"({os.uname().release}), usually after a system update. Build it with:\n"
+                "    sudo dkms autoinstall\n"
+                "or start the previous kernel from the boot menu (Advanced options for Ubuntu).")
+    if evdi_device_count() < 1:
+        return ("The EVDI driver is loaded but has no devices, so Hermes cannot make a screen "
+                "for a device. Restart the computer; if that does not help, run install.sh again.")
+    return None
+
+
 def log(message):
     """A short journal of what the app did, for finding rare glitches later."""
     try:
@@ -184,9 +201,38 @@ class Hermes:
                 continue
         return None
 
+    def others(self):
+        """Hermes or Sunshine processes other than the one this app runs, as
+        (pid, what). Two at once fight over the ports and the virtual screens."""
+        mine = self.pid()
+        found = []
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit() or int(entry) == mine:
+                continue
+            try:
+                with open(f"/proc/{entry}/comm") as f:
+                    name = f.read().strip()
+            except OSError:
+                continue
+            if name in ("sunshine", "hermes") or name.startswith("sunshine-"):
+                exe = os.path.realpath(f"/proc/{entry}/exe")
+                found.append((int(entry), exe if exe.startswith("/") and "/proc/" not in exe else name))
+        return found
+
     def start(self):
         if self.pid():
             return
+        problem = evdi_problem()
+        if problem:
+            log("not starting Hermes: " + problem.splitlines()[0])
+            raise HermesError(problem)
+        others = self.others()
+        if others:
+            listed = "\n".join(f"    {what} (process {pid})" for pid, what in others)
+            log(f"not starting Hermes: already running: {others}")
+            raise HermesError("Another Hermes is already running:\n" + listed + "\n\n"
+                              "Two at once fight over the same ports and screens. "
+                              "Quit the other one first, then press Start again.")
         command, workdir = self.command()
         # Screen Spawner has its own top bar icon; a second one from Hermes
         # (which a source build shows as a generic icon) would only confuse.
@@ -437,15 +483,17 @@ class Mutter:
 
     def apply_device(self, connector, mode):
         """Put one device's screen into `mode` ("extend" or "mirror:<connector>"),
-        check that GNOME did, and try once more if not."""
+        check that GNOME did, and try once more if not. If it still did not,
+        put the layout back as it was and say so in plain words."""
+        before = self.config_of(self.state())
+        reason = None
         for attempt in (1, 2):
             try:
                 self._apply_device_once(connector, mode)
             except GLib.Error as e:
                 # A stale serial is refused when the monitors changed in between.
                 log(f"{connector} -> {mode}, attempt {attempt}: GNOME refused: {e.message}")
-                if attempt == 2:
-                    raise
+                reason = self.plain_reason(e.message)
                 time.sleep(0.3)
                 continue
             for _ in range(10):
@@ -453,9 +501,51 @@ class Mutter:
                     log(f"{connector} -> {mode}, attempt {attempt}: done")
                     return
                 time.sleep(0.15)
+            reason = "the layout did not change"
             log(f"{connector} -> {mode}, attempt {attempt}: GNOME still shows "
                 f"{self.layout_of(connector, self.state()[2])}")
-        raise HermesError("GNOME did not switch the screen. Try again.")
+        self.restore(before)
+        raise HermesError(f"GNOME did not switch the screen: {reason}. The monitors are as they were.")
+
+    @staticmethod
+    def plain_reason(message):
+        """GNOME's refusal in words a user can act on."""
+        if "not adjacent" in message:
+            return "the monitors would not touch each other"
+        if "stale" in message.lower():
+            return "the monitors changed in the meantime"
+        if "mode" in message.lower():
+            return "the screen does not offer that size"
+        return message.split(":")[-1].strip() or "unknown reason"
+
+    def config_of(self, state):
+        """The layout in `state` as ApplyMonitorsConfig takes it."""
+        _serial, monitors, logical, _props = state
+        by_connector = {m[0][0]: m for m in monitors}
+        config = []
+        for x, y, scale, transform, primary, specs, _ in logical:
+            entries = []
+            for s in specs:
+                current = self.current_mode(by_connector[s[0]][1]) if s[0] in by_connector else None
+                if current is not None:
+                    entries.append((s[0], current[0], {}))
+            if entries:
+                config.append((int(x), int(y), float(scale), int(transform), bool(primary), entries))
+        return config
+
+    def restore(self, config):
+        """Put back a layout taken with config_of(), if the same monitors are there."""
+        try:
+            serial, monitors, _logical, _props = self.state()
+            present = {m[0][0] for m in monitors}
+            if any(e[0] not in present for lm in config for e in lm[5]):
+                log("not restoring the layout: the monitors changed")
+                return
+            self._call("ApplyMonitorsConfig", GLib.Variant(
+                "(uua(iiduba(ssa{sv}))a{sv})", (serial, 1, config, {})))
+            log("restored the layout from before the switch")
+        except GLib.Error as e:
+            log(f"could not restore the layout: {e.message}")
 
     def _apply_device_once(self, connector, mode):
         serial, monitors, logical, props = self.state()
