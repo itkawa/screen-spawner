@@ -7,6 +7,21 @@ All notable changes to Screen Spawner are listed here.
 - Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 - Touch per device and a choice of how the tablet's touches act; sound per device.
 
+## 0.3.1
+
+### Fedora and Arch Linux
+
+- `install.sh` and `uninstall.sh` work on **Fedora 45** (dnf) and **Arch Linux** (pacman) as well as on Ubuntu, Linux Mint and Debian.
+- On Fedora, EVDI comes from the negativo17 Multimedia repository, added for its two EVDI packages only (`dkms-evdi`, `libevdi`); `uninstall.sh` removes the repository and its signing key again.
+- On Arch Linux, the installer builds `evdi-dkms` from the AUR with `makepkg`. It does not upgrade the system: upgrade it first with `sudo pacman -Syu`.
+- The installer records only the packages it asks dnf or pacman for; on removal they take the dependencies they pulled in with them, and a package that something else still needs stays.
+- Hermes packages for Fedora 45 (RPM) and Arch Linux (`.pkg.tar.zst`) in the builds release v0.2.1, with the same patch as the Debian packages plus Hermes #118 (`patches/openssl4.patch`), which both need for OpenSSL 4. The Debian and Ubuntu packages are unchanged (v0.2.0).
+- A source build (`--build-from-source`) stays available on Debian and Ubuntu only.
+
+### Also
+
+- The app's hint for a missing EVDI driver no longer names Ubuntu's boot menu.
+
 ## 0.3.0
 
 ### Several devices at once

@@ -4,7 +4,7 @@
 
 Use an Android tablet as an extra screen for Linux, a phone as a portable display for your laptop, or a tablet as a third monitor next to an HDMI one. No USB cable, no HDMI dummy plug, and no dedicated app on the tablet beyond Moonlight. The tablet becomes an extended display or a mirror of your screen, with touch input, and the system sees it as a real monitor.
 
-**Tested configurations (current release):** GNOME on X11 and Wayland; Ubuntu, Linux Mint, and Debian.
+**Tested configurations (current release):** GNOME on X11 and Wayland; Ubuntu, Linux Mint, and Debian. The installer also supports Fedora 45 and Arch Linux.
 
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
@@ -22,7 +22,7 @@ The tablet works either as an **extended display**, a separate monitor with its 
 
 ### Tested on
 
-Ubuntu 22.04 with GNOME, on X11 and on Wayland. The installer was also tested on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13.
+Ubuntu 22.04 with GNOME, on X11 and on Wayland. The installer was also tested on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2, Debian 13, Fedora 45 and Arch Linux.
 
 ## Goal
 
@@ -80,7 +80,7 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 
 ## Requirements
 
-* **A distribution with apt:** the installer was tested on Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13. Streaming with the tablet was tested on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU. Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
+* **Ubuntu, Linux Mint, Debian, Fedora or Arch Linux:** the installer was tested on Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2, Debian 13, Fedora 45 and Arch Linux. Streaming with the tablet was tested on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU. Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
 * An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
 * An internet connection during installation only: `install.sh` downloads packages (and the Hermes source code when building from source)
 
@@ -97,16 +97,24 @@ cd screen-spawner
 Version 0.1.0 builds Hermes from source and can take 30–60 minutes.
 For installation from prebuilt packages, use **0.1.1 or newer**.
 
-The script downloads a prebuilt, patched Hermes package from the **v0.2.0** release in the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds),
+The script downloads a prebuilt, patched Hermes package from the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds) (release **v0.2.0** for Ubuntu, Mint and Debian, **v0.2.1** for Fedora and Arch Linux),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
 to load at boot, and installs the **Screen Spawner** app with its launcher in the
 application menu (see [Usage](#usage)). A **Hermes** launcher is added as well, for
 running Hermes without the app.
 Packages are available for amd64 Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.x
-(the Ubuntu 24.04 package), and Debian 13. Installation normally takes a few
-minutes; the first EVDI kernel module build can take longer.
+(the Ubuntu 24.04 package), Debian 13, Fedora 45 and Arch Linux. Installation
+normally takes a few minutes; the first EVDI kernel module build can take longer.
 
-If there is no matching package, the download fails or its checksum does not
+**On Fedora**, EVDI comes from the [negativo17](https://negativo17.org) Multimedia
+repository: the installer adds it limited to its two EVDI packages (`dkms-evdi`
+and `libevdi`), so it never replaces anything else.
+**On Arch Linux**, EVDI is in the AUR only: the installer builds the `evdi-dkms`
+package with `makepkg`, as an AUR helper would. Upgrade the system first
+(`sudo pacman -Syu`, and restart if the kernel was updated): the installer
+does not upgrade it, and the Hermes package is built for the current Arch Linux.
+
+On Ubuntu, Mint and Debian, if there is no matching package, the download fails or its checksum does not
 match, the script falls back to building Hermes in `~/Apollo-Linux` from the
 verified revision with `patches/evdi-fix.patch`. To request that explicitly:
 
@@ -129,8 +137,8 @@ The app goes to `~/.local/share/screen-spawner`, together with a copy of this RE
 
 Screen Spawner does not change the Linux kernel. For the virtual monitor it relies on EVDI, the DisplayLink driver:
 
-* It installs `evdi-dkms` from your distribution's repositories, and the kernel headers it needs. DKMS builds EVDI as a separate module (`evdi.ko`) for each installed kernel and builds it again after a kernel update. It is loaded and unloaded like any other driver.
-* It writes `options evdi initial_device_count=4` to `/etc/modprobe.d/evdi.conf`, so the driver creates four devices at boot, one for each tablet or phone that can connect at the same time, and adds `evdi` to `/etc/modules`, so the driver loads at boot. **Devices at once** in the app changes the number; it takes effect after a restart. Unused devices cost nothing.
+* It installs `evdi-dkms` from your distribution's repositories (on Fedora `dkms-evdi` from negativo17, on Arch Linux built from the AUR), and the kernel headers it needs. DKMS builds EVDI as a separate module (`evdi.ko`) for each installed kernel and builds it again after a kernel update. It is loaded and unloaded like any other driver.
+* It writes `options evdi initial_device_count=4` to `/etc/modprobe.d/evdi.conf`, so the driver creates four devices at boot, one for each tablet or phone that can connect at the same time, and adds `evdi` to `/etc/modules` (on Fedora and Arch Linux, to `/etc/modules-load.d/screen-spawner-evdi.conf`), so the driver loads at boot. On Fedora it also adds `/etc/yum.repos.d/screen-spawner-evdi.repo` and the repository's signing key. **Devices at once** in the app changes the number; it takes effect after a restart. Unused devices cost nothing.
 
 When EVDI loads, the kernel log says `evdi: module verification failed: signature and/or required key missing - tainting kernel`. That is normal for any driver DKMS builds on your computer instead of your distribution signing it: the kernel only notes that a module without its signature is loaded. Nothing is changed or broken by it. With Secure Boot on, the module has to be signed with a key enrolled in the firmware; Ubuntu offers to enroll one while it installs `evdi-dkms`.
 
@@ -260,7 +268,7 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
 
-The installation and uninstallation were tested end to end on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2 and Debian 13 systems in a container. A container has no desktop, so streaming was not tried there.
+The installation and uninstallation were tested end to end on clean Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2, Debian 13, Fedora 45 and Arch Linux systems in a container, including a real DKMS build of EVDI. A container has no desktop, so streaming was not tried there.
 
 ---
 
@@ -396,6 +404,7 @@ On Debian, hardware encoding on newer Intel GPUs may need the `intel-media-va-dr
 | `docs/performance.md` | Load and stream measurements, in extended and mirrored mode, over 2.4 and 5 GHz Wi-Fi |
 | `tools/measure-load.py` | The script that took those measurements |
 | `patches/evdi-fix.patch` | Fixes for Hermes: desktop freezes with EVDI, input on X11, mirroring and moving the tablet on X11 and Wayland, libevdi 1.12 on Ubuntu 22.04 |
+| `patches/openssl4.patch` | Hermes [#118](https://github.com/MrOz59/Hermes/pull/118): building with OpenSSL 4, for the Fedora and Arch Linux packages |
 
 ---
 
