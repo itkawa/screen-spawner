@@ -15,7 +15,7 @@ Use an Android tablet as an extra screen for Linux, a phone as a portable displa
    sudo apt install screen-spawner
    ```
 
-   On Fedora 45: the same first line, then `sudo dnf install screen-spawner`. On Arch Linux: [`install.sh`](#with-installsh). More in [Installation](#installation).
+   On Fedora 45: the same first line, then `sudo dnf install screen-spawner`. On Arch Linux: [`install.sh`](#with-installsh). More in [Installation](#installation); all commands on one page: [INSTALL.md](INSTALL.md).
 2. **Install [Moonlight](https://play.google.com/store/apps/details?id=com.limelight)** on the Android tablet or phone, on the same Wi-Fi network.
 3. **Open Screen Spawner** from the application menu, press **Start**, then [pair the device](#pair-a-tablet-or-phone-once-per-device) with the PIN Moonlight shows.
 4. **In Moonlight, choose Desktop:** the tablet becomes a second monitor.
