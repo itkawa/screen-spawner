@@ -7,6 +7,10 @@ All notable changes to Screen Spawner are listed here.
 - Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 - Touch per device and a choice of how the tablet's touches act; sound per device.
 
+## Unreleased
+
+- `uninstall.sh` rebuilds an icon cache in `~/.local/share/icons` if another program made one there, so that it no longer lists the app's removed icons; otherwise Screen Spawner installed afterwards as a package showed an empty icon.
+
 ## 0.3.1
 
 ### Fedora and Arch Linux

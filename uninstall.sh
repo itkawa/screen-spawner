@@ -492,6 +492,15 @@ if [ $PPA_REMOVED -eq 1 ]; then
     sudo apt update
 fi
 
+# Another program may have made an icon cache in ~/.local/share/icons while
+# the app's icons were there. Left as it is, it still lists the removed
+# icons, and a Screen Spawner installed later as a package shows an empty
+# icon. Rebuild it without them.
+USER_ICON_CACHE="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/icon-theme.cache"
+if [ -f "$USER_ICON_CACHE" ] && command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -q -t "$(dirname "$USER_ICON_CACHE")" || true
+fi
+
 # ------------------------------------------------------------
 # 6. Update manifest
 # ------------------------------------------------------------
