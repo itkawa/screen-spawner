@@ -18,8 +18,16 @@ All notable changes to Screen Spawner are listed here.
 - Hermes packages for Fedora 45 (RPM) and Arch Linux (`.pkg.tar.zst`) in the builds release v0.2.1, with the same patch as the Debian packages plus Hermes #118 (`patches/openssl4.patch`), which both need for OpenSSL 4. The Debian and Ubuntu packages are unchanged (v0.2.0).
 - A source build (`--build-from-source`) stays available on Debian and Ubuntu only.
 
+### Install with the package manager
+
+- Screen Spawner is a package now: `sudo apt install screen-spawner` on Ubuntu, Linux Mint and Debian, `sudo dnf install screen-spawner` on Fedora, after adding the [package repository](https://github.com/itkawa/screen-spawner-packages) with one command. It updates with the system and uninstalls with the package manager.
+- The package installs the app system-wide (`/usr/share/screen-spawner`, the `screen-spawner` command, the menu entry), with Hermes (`hermes-screen-spawner`, the same packages as builds v0.2.0 and v0.2.1) and EVDI as dependencies, and sets EVDI up for four devices, loaded at boot. Removing it (`purge` on Debian) also removes the EVDI setting it created.
+- The APT and DNF repositories are signed (key `280E 1BCC 0414 3CB4 07AB 28C1 E906 9072 32FE 0F54`).
+- `install.sh` stays for installing without a repository.
+
 ### Also
 
+- Installed from a package, the app runs Hermes from `/usr/bin/sunshine` and passes `stream_audio=false` unless `~/.config/hermes/hermes.conf` sets it, so the sound stays on the computer's speakers as with `install.sh`. **Uninstall Screen Spawner…** shows the package manager command instead.
 - The app's hint for a missing EVDI driver no longer names Ubuntu's boot menu.
 
 ## 0.3.0

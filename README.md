@@ -6,6 +6,20 @@ Use an Android tablet as an extra screen for Linux, a phone as a portable displa
 
 **Supported systems:** Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22, Debian 13, Fedora 45 and Arch Linux, with GNOME on X11 or Wayland. Streaming was tested on Ubuntu 22.04; installation and removal on all of them.
 
+## Quick start
+
+1. **Install Screen Spawner on the computer.** On Ubuntu, Linux Mint and Debian:
+
+   ```bash
+   curl -fsSL https://itkawa.github.io/screen-spawner-packages/install-repo.sh | sudo sh
+   sudo apt install screen-spawner
+   ```
+
+   On Fedora 45: the same first line, then `sudo dnf install screen-spawner`. On Arch Linux: [`install.sh`](#with-installsh). More in [Installation](#installation).
+2. **Install [Moonlight](https://play.google.com/store/apps/details?id=com.limelight)** on the Android tablet or phone, on the same Wi-Fi network.
+3. **Open Screen Spawner** from the application menu, press **Start**, then [pair the device](#pair-a-tablet-or-phone-once-per-device) with the PIN Moonlight shows.
+4. **In Moonlight, choose Desktop:** the tablet becomes a second monitor.
+
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
 *From left: HDMI monitor, laptop screen, and an Android tablet as the third display.*
@@ -88,14 +102,39 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 
 ## Installation
 
+### With the package manager
+
+Screen Spawner then installs, updates and uninstalls like any other program.
+
+**Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22, Debian 13:**
+
+```bash
+curl -fsSL https://itkawa.github.io/screen-spawner-packages/install-repo.sh | sudo sh
+sudo apt install screen-spawner
+```
+
+**Fedora 45:**
+
+```bash
+curl -fsSL https://itkawa.github.io/screen-spawner-packages/install-repo.sh | sudo sh
+sudo dnf install screen-spawner
+```
+
+On **Arch Linux** use [`install.sh`](#with-installsh) for now; an AUR package will follow.
+
+The first line adds the [Screen Spawner package repository](https://github.com/itkawa/screen-spawner-packages) and its signing key. On Fedora it also adds EVDI from negativo17 (see below) and installs the headers of the running kernel if they are missing. Updates then come with the system's own updates (`sudo apt upgrade`, `sudo dnf upgrade`). To uninstall: `sudo apt remove screen-spawner` (then `sudo apt autoremove` takes Hermes and EVDI too), or `sudo dnf remove screen-spawner`. Your Hermes settings and paired devices in `~/.config/hermes` stay.
+
+The package installs the app system-wide, with Hermes and EVDI as its dependencies, and sets EVDI up the same way as `install.sh` (four devices at once, loaded at boot). On plain GNOME, as on Debian or Fedora, install `gnome-shell-extension-appindicator` as well for the top bar icon.
+
+If you installed Screen Spawner with `install.sh` before, run `./uninstall.sh` first.
+
+### With install.sh
+
 ```bash
 git clone https://github.com/itkawa/screen-spawner
 cd screen-spawner
 ./install.sh
 ```
-
-Version 0.1.0 builds Hermes from source and can take 30–60 minutes.
-For installation from prebuilt packages, use **0.1.1 or newer**.
 
 The script downloads a prebuilt, patched Hermes package from the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds) (release **v0.2.0** for Ubuntu, Mint and Debian, **v0.2.1** for Fedora and Arch Linux),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
@@ -230,7 +269,7 @@ The icon in the top bar opens a menu: open the window, start or stop Hermes, swi
 
 ### Uninstall from the app
 
-**Uninstall Screen Spawner…** opens a terminal with the uninstaller. It lists what it will remove and asks before removing anything. See also [Uninstall](#uninstall).
+Installed from a package, **Uninstall Screen Spawner…** shows the command that removes it. Installed with `install.sh`, it opens a terminal with the uninstaller. It lists what it will remove and asks before removing anything. See also [Uninstall](#uninstall).
 
 ### Without the app
 
