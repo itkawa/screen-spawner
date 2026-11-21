@@ -43,6 +43,12 @@ WEB_UI = "https://localhost:47990"
 LAUNCHER = os.path.expanduser("~/.local/share/applications/hermes.desktop")
 DATA_DIR = os.path.expanduser("~/.local/share/screen-spawner")
 UNINSTALLER = os.path.join(DATA_DIR, "uninstall.sh")
+# Installed from a package (apt, dnf, pacman) instead of by install.sh: the
+# program lives under /usr, Hermes is /usr/bin/sunshine, and the package
+# manager removes it.
+PACKAGED = os.path.realpath(__file__).startswith("/usr/")
+PACKAGED_HERMES = "/usr/bin/sunshine"
+HERMES_CONFIG = os.path.expanduser("~/.config/hermes/hermes.conf")
 DESKTOP_APP = "Desktop"
 ICON = "screen-spawner"
 PANEL_ICON = "screen-spawner-symbolic"
@@ -206,10 +212,15 @@ class Hermes:
 
     @staticmethod
     def command():
-        """The command and working directory from the Hermes launcher that install.sh writes."""
+        """The command and working directory from the Hermes launcher that install.sh writes.
+
+        Installed from a package, there is no such launcher: Hermes comes from
+        its own package as /usr/bin/sunshine."""
         parser = configparser.ConfigParser(interpolation=None)
         parser.optionxform = str
         if not parser.read(LAUNCHER):
+            if PACKAGED and os.path.exists(PACKAGED_HERMES):
+                return [PACKAGED_HERMES], os.path.expanduser("~")
             raise HermesError(f"The Hermes launcher was not found: {LAUNCHER}")
         entry = parser["Desktop Entry"]
         command = shlex.split(entry.get("Exec", ""))
@@ -296,6 +307,12 @@ class Hermes:
         # instead of all of them sharing the first one.
         if evdi_device_count() > 1:
             command.append("hermes_kms_multi_output=true")
+        # Without this Hermes switches the whole system's sound to the tablet
+        # while it is connected. install.sh writes it into hermes.conf; a
+        # package cannot reach the user's config, so it is passed here, unless
+        # the user has set stream_audio themselves.
+        if not hermes_config_sets("stream_audio"):
+            command.append("stream_audio=false")
         log("starting Hermes: " + " ".join(command))
         self._process = subprocess.Popen(
             command, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -813,6 +830,26 @@ def set_autostart(enabled, start_hermes=False):
                 "Terminal=false\n"
                 "X-GNOME-Autostart-enabled=true\n")
     os.replace(temp, AUTOSTART_FILE)
+
+
+def hermes_config_sets(key):
+    """Whether the user's hermes.conf sets this option."""
+    try:
+        with open(HERMES_CONFIG) as f:
+            return any(line.split("=", 1)[0].strip() == key for line in f if "=" in line)
+    except OSError:
+        return False
+
+
+def package_remove_command():
+    """The command that removes Screen Spawner installed from a package."""
+    if shutil.which("apt"):
+        return "sudo apt remove screen-spawner"
+    if shutil.which("dnf"):
+        return "sudo dnf remove screen-spawner"
+    if shutil.which("pacman"):
+        return "sudo pacman -Rns screen-spawner"
+    return "your package manager"
 
 
 def open_terminal(script):
@@ -1554,6 +1591,12 @@ class Window(Gtk.ApplicationWindow):
         self.refresh()
 
     def on_uninstall(self, *_):
+        if PACKAGED:
+            self.message("Screen Spawner was installed from a package. To remove it, "
+                         f"run in a terminal:\n    {package_remove_command()}\n\n"
+                         "Paired devices and Hermes settings in ~/.config/hermes stay.",
+                         Gtk.MessageType.INFO)
+            return
         if not os.path.exists(UNINSTALLER):
             self.message(f"The uninstaller was not found: {UNINSTALLER}\n"
                          "Run uninstall.sh from the Screen Spawner folder instead.")
