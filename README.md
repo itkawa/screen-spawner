@@ -4,7 +4,7 @@
 
 Use an Android tablet as an extra screen for Linux, a phone as a portable display for your laptop, or a tablet as a third monitor next to an HDMI one. No USB cable, no HDMI dummy plug, and no dedicated app on the tablet beyond Moonlight. The tablet becomes an extended display or a mirror of your screen, with touch input, and the system sees it as a real monitor.
 
-**Tested configurations (current release):** GNOME on X11 and Wayland; Ubuntu, Linux Mint, and Debian. The installer also supports Fedora 45 and Arch Linux.
+**Supported systems:** Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22, Debian 13, Fedora 45 and Arch Linux, with GNOME on X11 or Wayland. Streaming was tested on Ubuntu 22.04; installation and removal on all of them.
 
 ![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
 
