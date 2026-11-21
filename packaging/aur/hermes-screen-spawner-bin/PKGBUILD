@@ -1,0 +1,26 @@
+# Maintainer: itkawa <10118073+itkawa@users.noreply.github.com>
+# The prebuilt package from the screen-spawner-hermes-builds release, whose
+# corresponding source is published there too.
+_release=v0.2.1
+_file=hermes-screen-spawner-0.5.1.ss0.2.1-1-x86_64.pkg.tar.zst
+pkgname=hermes-screen-spawner-bin
+pkgver=0.5.1.ss0.2.1
+pkgrel=1
+pkgdesc="Hermes 0.5.1 streaming server with the Screen Spawner EVDI patch (prebuilt)"
+arch=(x86_64)
+url="https://github.com/itkawa/screen-spawner-hermes-builds"
+license=(GPL-3.0-only AGPL-3.0-only)
+depends=(evdi avahi curl libcap libdrm libevdev libpulse libva libx11 libxcb libxfixes
+         libxrandr libxtst miniupnpc numactl openssl opus qt6-base qt6-svg mesa libglvnd
+         wayland xorg-xrandr glib2)
+provides=("hermes-screen-spawner=$pkgver")
+conflicts=(hermes-screen-spawner hermes sunshine)
+options=(!strip !debug)
+source=("https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/$_release/$_file")
+noextract=("$_file")
+sha256sums=('48e02195daf123b96ff3480f833b0c620bc5028eac57a14ffce8ebecc17c713e')
+
+package() {
+    bsdtar -xf "$srcdir/$_file" -C "$pkgdir" \
+        --exclude .PKGINFO --exclude .BUILDINFO --exclude .MTREE --exclude .INSTALL
+}

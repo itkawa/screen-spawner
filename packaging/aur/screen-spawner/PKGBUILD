@@ -1,0 +1,21 @@
+# Maintainer: itkawa <10118073+itkawa@users.noreply.github.com>
+pkgname=screen-spawner
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Android tablet or phone as a second monitor over Wi-Fi, through Moonlight"
+arch=(any)
+url="https://github.com/itkawa/screen-spawner"
+license=(GPL-3.0-only)
+depends=(hermes-screen-spawner evdi kmod python python-gobject gtk3 libayatana-appindicator xorg-xrandr polkit)
+optdepends=('linux-headers: build EVDI for the linux kernel (linux-lts-headers, linux-zen-headers for others)'
+            'intel-media-driver: hardware video encoding on Intel GPUs'
+            'gnome-shell-extension-appindicator: the top bar icon on GNOME')
+install=screen-spawner.install
+source=("$pkgname-$pkgver.tar.gz::https://github.com/itkawa/screen-spawner/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+    cd "$pkgname-$pkgver"
+    bash packaging/stage-app.sh "$PWD" "$pkgdir"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

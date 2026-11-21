@@ -169,3 +169,30 @@ available; --package-only requires 1 GiB and never compiles Hermes.
 Set `SCREEN_SPAWNER_BUILDS_DIR` or local Git config `screenSpawner.buildsDirectory`
 to keep packages and logs outside the project. Otherwise the default is the
 project parent directory. This checkout uses `/home/shared/screen spawner hermes`.
+
+## Package repositories (apt, dnf, AUR)
+
+The `screen-spawner` package, with `hermes-screen-spawner` and EVDI as
+dependencies, is served from https://itkawa.github.io/screen-spawner-packages
+(the `itkawa/screen-spawner-packages` repository, GitHub Pages from `main`).
+
+* `stage-app.sh` lays out the app as installed under `/usr`; the deb, the rpm
+  and the AUR package all use it.
+* `package-app-deb.sh` and `package-app-rpm.sh` build the app packages (noarch).
+* `build-apt-repo.sh` and `build-dnf-repo.sh` build the signed repositories
+  with the Hermes packages of builds v0.2.0 (deb) and v0.2.1 (rpm).
+* `build-package-repos.sh VERSION OUT` does all of it: packages in
+  `OUT/packages`, the repository working tree in `OUT/site`. It needs the
+  signing key (`KEY_DIR`, a GnuPG home with key
+  `280E1BCC04143CB407AB28C1E906907232FE0F54`); the secret key never goes into
+  git.
+* `install-repo.sh` is what users run to add the repository; it is copied to
+  the site.
+* `test-apt-repo.sh`, `test-dnf-repo.sh` and `test-aur.sh` install, upgrade
+  and remove in clean containers, from two locally served builds.
+* `aur/` holds the AUR packages `screen-spawner` and
+  `hermes-screen-spawner-bin`; `aur-prepare.sh VERSION OUT` fills in the
+  checksum of the tag's tarball and writes `.SRCINFO`, after the tag is public.
+
+A new version: `build-package-repos.sh`, copy `OUT/site` over the
+`screen-spawner-packages` working tree (keeping `.git`), commit and push.

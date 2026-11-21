@@ -1,0 +1,32 @@
+# EVDI with four devices at once, loaded now and at boot. 1 was the number
+# before Screen Spawner 0.3.0; any other number was chosen in the app
+# (Devices at once) and stays.
+post_install() {
+    CONFIG=/etc/modprobe.d/evdi.conf
+    MARK=/var/lib/screen-spawner/evdi.conf.created
+    now=$(sed -n 's/^options evdi initial_device_count=\([0-9]\+\)$/\1/p' "$CONFIG" 2>/dev/null | tail -n 1)
+    if [ -z "$now" ] || [ "$now" = 1 ]; then
+        [ -e "$CONFIG" ] || { mkdir -p "${MARK%/*}"; : > "$MARK"; }
+        echo "options evdi initial_device_count=4" > "$CONFIG"
+    fi
+    if ! grep -q '^evdi ' /proc/modules 2>/dev/null; then
+        modprobe evdi 2>/dev/null || {
+            echo "Screen Spawner: the EVDI driver could not be loaded now."
+            echo "If it is not built for this kernel, install the headers of your"
+            echo "kernel (linux-headers, linux-lts-headers...) and restart."
+        }
+    fi
+}
+
+post_upgrade() {
+    post_install
+}
+
+# The EVDI settings the package created go with it.
+post_remove() {
+    MARK=/var/lib/screen-spawner/evdi.conf.created
+    if [ -e "$MARK" ]; then
+        rm -f /etc/modprobe.d/evdi.conf "$MARK"
+    fi
+    rmdir /var/lib/screen-spawner 2>/dev/null || true
+}
