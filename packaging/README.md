@@ -50,6 +50,23 @@ available alongside every distributed package. These scripts reproduce the
 build process; apt/npm repositories are live, so this does not promise
 byte-for-byte reproducibility.
 
+## Fedora and Arch Linux packages (builds v0.2.1)
+
+`./packaging/build-other.sh fedora45` and `./packaging/build-other.sh arch` build
+Hermes in a `fedora:45` or `archlinux:latest` container with the same patch plus
+`patches/openssl4.patch` (Hermes #118; both systems ship OpenSSL 4). CMake 4 needs
+`-DCMAKE_POLICY_VERSION_MINIMUM=3.5` and, for the fetched Boost, one line in
+Boost.Locale's CMakeLists.txt; `container-build-other.sh` adds both.
+`package-other.sh` stages the same files as `package-deb.sh` and makes an RPM with
+CPack or an Arch package with `makepkg`. Outputs go to `../packages-0.2.1/`.
+
+`./packaging/test-other.sh SYSTEM package` installs, checks and removes the
+package; `./packaging/test-other.sh SYSTEM installer` runs `install.sh` and
+`uninstall.sh` as a user with sudo, including a real DKMS build of EVDI for the
+distribution's current kernel (Fedora: dkms-evdi from negativo17; Arch: evdi-dkms
+built from the AUR), and checks that everything recorded is gone afterwards.
+Arch Linux is rolling: rebuild and retest its package when its libraries move on.
+
 ## Validation
 
 After all four builds, pin their actual SHA256 values in `install.sh` and write

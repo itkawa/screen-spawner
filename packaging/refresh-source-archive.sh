@@ -16,9 +16,15 @@ tar -xJf "$old_archive" -C "$work"
 mv "$work/hermes-screen-spawner-$old-source" "$work/hermes-screen-spawner-$new-source"
 stage=$work/hermes-screen-spawner-$new-source
 
-# Hermes: take the old patch out and put the new one in.
-patch -s -p1 -R -d "$stage/Hermes" < "$stage/build-support/patches/evdi-fix.patch"
-patch -s -p1 -d "$stage/Hermes" < "$project/patches/evdi-fix.patch"
+# Hermes: take the old patches out (last applied first) and put the new ones in.
+mapfile -t old_patches < <(printf '%s\n' "$stage"/build-support/patches/*.patch | sort -r)
+for old_patch in "${old_patches[@]}"; do
+    patch -s -p1 -R -d "$stage/Hermes" < "$old_patch"
+done
+mapfile -t new_patches < <(printf '%s\n' "$project"/patches/*.patch | sort)
+for new_patch in "${new_patches[@]}"; do
+    patch -s -p1 -d "$stage/Hermes" < "$new_patch"
+done
 find "$stage/Hermes" -name '*.orig' -delete
 
 # Build control files from this checkout.
@@ -29,8 +35,10 @@ for name in install.sh uninstall.sh README.md CHANGELOG.md LICENSE; do
     cp "$project/$name" "$stage/build-support/$name"
 done
 cp "$project/LICENSE" "$stage/build-support/SCREEN-SPAWNER-LICENSE"
-# The patch body is exactly what differs from the upstream revision.
-sed -n '/^diff --git /,$p' "$project/patches/evdi-fix.patch" > "$stage/build-support/ACTUAL-HERMES-CHANGES.patch"
+# The patch bodies are exactly what differs from the upstream revision.
+for new_patch in "${new_patches[@]}"; do
+    sed -n '/^diff --git /,$p' "$new_patch"
+done > "$stage/build-support/ACTUAL-HERMES-CHANGES.patch"
 
 # Version references in the archive's own descriptions.
 sed -i -E "s/Screen Spawner [0-9]+\.[0-9]+\.[0-9]+/Screen Spawner $app/g; s#/v$old/#/v$new/#g; s/hermes-screen-spawner-$old-source/hermes-screen-spawner-$new-source/g" \
@@ -48,16 +56,24 @@ cat >> "$stage/README-SOURCE.md" <<EOF
 
 ## Changes since $old
 
-Only \`patches/evdi-fix.patch\` and the build scripts changed; the Hermes revision,
+Only the patches in \`patches/\` and the build scripts changed; the Hermes revision,
 submodules, Boost, nlohmann/json, npm packages and codec sources are the same as in
 $old. \`build-support/OFFLINE-REBUILD-VALIDATION.txt\` describes the offline rebuild
 check made for $old with these same dependency sources.
 EOF
 
-(cd "$out" && sha256sum hermes-screen-spawner_*+ss${new}_*_amd64.deb) > "$stage/BINARY-SHA256SUMS"
+# Sources the new packages used beyond the old archive (EXTRA_SOURCE_DIR is
+# merged into the archive as is), e.g. npm packages a later build resolved.
+if [ -n "${EXTRA_SOURCE_DIR:-}" ]; then
+    cp -a "$EXTRA_SOURCE_DIR"/. "$stage"/
+fi
 
-# Nothing of the old version may remain in our own files.
-if grep -rln --exclude-dir=fetched-sources --exclude=CHANGELOG.md --exclude=OFFLINE-REBUILD-VALIDATION.txt --exclude=README-SOURCE.md \
+(cd "$out" && sha256sum $(ls | grep -E "^hermes-screen-spawner.*(ss${new}.*\.(deb|rpm)|ss${new}-[0-9]+-x86_64\.pkg\.tar\.zst)\$")) > "$stage/BINARY-SHA256SUMS"
+
+# Nothing of the old version may remain in our own files. Skipped when the
+# new packages sit beside the old ones (0.2.1 adds Fedora and Arch Linux
+# packages; the Debian packages stay 0.2.0 and are still named so).
+if [ "${KEEP_OLD_REFERENCES:-0}" != 1 ] && grep -rln --exclude-dir=fetched-sources --exclude=CHANGELOG.md --exclude=OFFLINE-REBUILD-VALIDATION.txt --exclude=README-SOURCE.md \
         -e "ss$old" -e "v$old/" -e "Screen Spawner $old" "$stage"; then
     echo "ERROR: references to $old remain (listed above)." >&2
     exit 1

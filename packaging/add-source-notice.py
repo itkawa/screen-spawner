@@ -5,11 +5,17 @@ from pathlib import Path
 import re
 import sys
 
+import os
+
 web = Path(sys.argv[1])
-notice = '''<footer id="screen-spawner-source-notice" style="padding:0.75rem;text-align:center;font-size:0.875rem">
-Modified Hermes for Screen Spawner 0.3.0 ·
-<a href="https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.0/hermes-screen-spawner-0.2.0-source.tar.xz" target="_blank" rel="noopener noreferrer">Download corresponding source</a> ·
-<a href="https://github.com/itkawa/screen-spawner/blob/v0.3.0/packaging/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener noreferrer">Licenses and third-party notices</a>
+# The Debian packages are builds 0.2.0 for Screen Spawner 0.3.0; the Fedora and
+# Arch Linux packages pass SS_BUILDS=0.2.1 SS_APP=0.3.1.
+builds = os.environ.get('SS_BUILDS', '0.2.0')
+app = os.environ.get('SS_APP', '0.3.0')
+notice = f'''<footer id="screen-spawner-source-notice" style="padding:0.75rem;text-align:center;font-size:0.875rem">
+Modified Hermes for Screen Spawner {app} ·
+<a href="https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v{builds}/hermes-screen-spawner-{builds}-source.tar.xz" target="_blank" rel="noopener noreferrer">Download corresponding source</a> ·
+<a href="https://github.com/itkawa/screen-spawner/blob/v{app}/packaging/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener noreferrer">Licenses and third-party notices</a>
 </footer>'''
 count = 0
 for page in sorted(web.glob('*.html')):

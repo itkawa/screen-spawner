@@ -1,0 +1,4 @@
+FROM fedora:45
+COPY packaging/install-build-deps-other.sh /usr/local/bin/install-build-deps-other
+WORKDIR /build
+ENTRYPOINT ["bash", "/project/packaging/container-build-other.sh", "fedora45"]
