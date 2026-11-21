@@ -27,6 +27,7 @@ echo "Install manifest: $MANIFEST"
 # Entries that could not be removed stay in the manifest
 REMAINING=()
 FAILED=0
+KEPT_IN_USE=()
 
 keep() {
     REMAINING+=("$1"$'\t'"$2")
@@ -38,6 +39,8 @@ keep() {
 # ------------------------------------------------------------
 
 APT_ENTRIES=()
+SYS_ENTRIES=()     # Fedora (dnf) and Arch Linux (pacman) packages
+SYS_PM=
 OTHER_ENTRIES=()
 
 while IFS=$'\t' read -r type value; do
@@ -45,6 +48,7 @@ while IFS=$'\t' read -r type value; do
 
     case "$type" in
         apt) APT_ENTRIES+=("$value") ;;
+        dnf|pacman) SYS_ENTRIES+=("$value"); SYS_PM="$type" ;;
         *)   OTHER_ENTRIES+=("$type"$'\t'"$value") ;;
     esac
 done < <(tac "$MANIFEST")
@@ -56,15 +60,19 @@ done < <(tac "$MANIFEST")
 # install.sh cannot know whether its tools were used for other work
 # later, so show the ones people commonly use and let them decide.
 TOOLS=()
-for pkg in "${APT_ENTRIES[@]}"; do
+for pkg in "${APT_ENTRIES[@]}" "${SYS_ENTRIES[@]}"; do
     case "${pkg%%:*}" in
-        gcc-13|g++-13|git|curl|wget|ninja-build|vainfo) TOOLS+=("${pkg%%:*}") ;;
+        gcc-13|g++-13|git|curl|wget|ninja-build|vainfo|libva-utils|base-devel) TOOLS+=("${pkg%%:*}") ;;
     esac
 done
 
 echo
 echo "This removes everything install.sh installed:"
-echo "  ${#APT_ENTRIES[@]} apt packages${TOOLS[*]:+, including ${TOOLS[*]}}"
+if [ -n "$SYS_PM" ]; then
+    echo "  ${#SYS_ENTRIES[@]} $SYS_PM packages${TOOLS[*]:+, including ${TOOLS[*]}}"
+else
+    echo "  ${#APT_ENTRIES[@]} apt packages${TOOLS[*]:+, including ${TOOLS[*]}}"
+fi
 for entry in "${OTHER_ENTRIES[@]}"; do
     value="${entry#*$'\t'}"
     case "${entry%%$'\t'*}" in
@@ -131,9 +139,78 @@ for entry in "${OTHER_ENTRIES[@]}"; do
 done
 
 # ------------------------------------------------------------
+# 4a. Remove Fedora (dnf) or Arch Linux (pacman) packages
+# ------------------------------------------------------------
+# Only the packages install.sh asked for are recorded; dnf and pacman remove
+# the dependencies they pulled in with them, when nothing else needs those.
+# A package that something not installed by install.sh still needs stays.
+
+if [ ${#SYS_ENTRIES[@]} -gt 0 ]; then
+    echo
+    echo "=== Removing $SYS_PM packages installed by install.sh ==="
+    PKGS=()
+    for pkg in "${SYS_ENTRIES[@]}"; do
+        if [ "$SYS_PM" = dnf ]; then
+            rpm -q "$pkg" >/dev/null 2>&1 && PKGS+=("$pkg")
+        else
+            pacman -Q "$pkg" >/dev/null 2>&1 && PKGS+=("$pkg")
+        fi
+    done
+    if [ ${#PKGS[@]} -eq 0 ]; then
+        echo "No recorded $SYS_PM packages are installed."
+    else
+        echo "Packages to remove:"
+        printf '  %s\n' "${PKGS[@]}"
+        # Leave out what other installed packages still need, repeating until
+        # the rest can go together.
+        while [ ${#PKGS[@]} -gt 0 ]; do
+            HELD=()
+            if [ "$SYS_PM" = dnf ]; then
+                CHECK="$(rpm -e --test "${PKGS[@]}" 2>&1)" || true
+                while IFS= read -r cap; do
+                    [ -n "$cap" ] || continue
+                    HELD+=("$(rpm -q --qf '%{NAME}\n' --whatprovides "$cap" 2>/dev/null | head -n 1)")
+                done < <(printf '%s\n' "$CHECK" | sed -n 's/^[[:space:]]*\(.*\) is needed by (installed) .*/\1/p' | sort -u)
+            else
+                CHECK="$(pacman -Rs --print "${PKGS[@]}" 2>&1)" || true
+                mapfile -t HELD < <(printf '%s\n' "$CHECK" | sed -n 's/.*removing \([^ ]*\) breaks dependency.*/\1/p' | sort -u)
+            fi
+            [ ${#HELD[@]} -gt 0 ] || break
+            REST=()
+            for pkg in "${PKGS[@]}"; do
+                if printf '%s\n' "${HELD[@]}" | grep -qxF "$pkg"; then
+                    echo "Keeping $pkg: other installed packages need it."
+                    KEPT_IN_USE+=("$pkg")
+                else
+                    REST+=("$pkg")
+                fi
+            done
+            # Nothing left out: stop rather than loop; removal then reports why.
+            [ ${#REST[@]} -lt ${#PKGS[@]} ] || break
+            PKGS=("${REST[@]}")
+        done
+        if [ ${#PKGS[@]} -gt 0 ]; then
+            if [ "$SYS_PM" = dnf ]; then
+                sudo dnf remove -y "${PKGS[@]}" && REMOVED=1 || REMOVED=0
+            else
+                sudo pacman -Rns --noconfirm "${PKGS[@]}" && REMOVED=1 || REMOVED=0
+            fi
+            if [ "$REMOVED" -eq 1 ]; then
+                echo "$SYS_PM packages removed."
+            else
+                echo "$SYS_PM packages were NOT removed. They stay in the manifest."
+                for pkg in "${PKGS[@]}"; do keep "$SYS_PM" "$pkg"; done
+            fi
+        fi
+    fi
+fi
+
+# ------------------------------------------------------------
 # 4. Remove apt packages
 # ------------------------------------------------------------
 
+KEPT_SYSTEM=()
+if [ ${#APT_ENTRIES[@]} -gt 0 ]; then
 echo
 echo "=== Removing apt packages installed by install.sh ==="
 
@@ -162,7 +239,6 @@ PROTECTED="$(
     fi
 )"
 PROTECTED="$(printf '%s\n' "$PROTECTED" | normalize | sort -u)"
-KEPT_SYSTEM=()
 PKGS=()
 
 for pkg in "${APT_ENTRIES[@]}"; do
@@ -228,6 +304,7 @@ else
         done
     fi
 fi
+fi # apt packages
 
 # ------------------------------------------------------------
 # 5. Remove everything else (newest first)
@@ -238,7 +315,6 @@ echo "=== Removing files, snaps, repositories and Node.js ==="
 
 PPA_REMOVED=0
 KEEP_NVM=0
-KEPT_IN_USE=()
 
 for entry in "${OTHER_ENTRIES[@]}"; do
     type="${entry%%$'\t'*}"
@@ -356,6 +432,21 @@ for entry in "${OTHER_ENTRIES[@]}"; do
         rootfile)
             echo "Removing file: $value"
             sudo rm -f "$value"
+            ;;
+
+        rpmkey)
+            # The signing key of a repository install.sh added (Fedora)
+            if rpm -q "$value" >/dev/null 2>&1; then
+                echo "Removing repository key: $value"
+                # Newer rpm deletes keys by fingerprint; the package name holds it.
+                fingerprint="${value#gpg-pubkey-}"
+                fingerprint="${fingerprint%-*}"
+                if rpmkeys --help 2>/dev/null | grep -q -- '--delete'; then
+                    sudo rpmkeys --delete "$fingerprint" || keep "$type" "$value"
+                else
+                    sudo rpm -e "$value" || keep "$type" "$value"
+                fi
+            fi
             ;;
 
         rootdir)

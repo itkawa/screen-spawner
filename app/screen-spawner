@@ -137,7 +137,7 @@ def evdi_problem():
                 f"If it says the module is not found, it was not built for this kernel "
                 f"({os.uname().release}), usually after a system update. Build it with:\n"
                 "    sudo dkms autoinstall\n"
-                "or start the previous kernel from the boot menu (Advanced options for Ubuntu).")
+                "or start the previous kernel from the boot menu (under Advanced options).")
     if evdi_device_count() < 1:
         return ("The EVDI driver is loaded but has no devices, so Hermes cannot make a screen "
                 "for a device. Restart the computer; if that does not help, run install.sh again.")

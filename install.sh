@@ -153,13 +153,105 @@ first_available() {
     return 1
 }
 
+# Which package manager this system has: Debian and Ubuntu (apt), Fedora (dnf)
+# or Arch Linux (pacman). Each has its own branch below where they differ.
+DISTRO=debian
+OS_ID=
+OS_LIKE=
+OS_VERSION=
+if [ -r /etc/os-release ]; then
+    OS_ID="$(. /etc/os-release; echo "${ID:-}")"
+    OS_LIKE="$(. /etc/os-release; echo "${ID_LIKE:-}")"
+    OS_VERSION="$(. /etc/os-release; echo "${VERSION_ID:-}")"
+fi
+case " $OS_ID $OS_LIKE " in
+    *" fedora "*) DISTRO=fedora ;;
+    *" arch "*) DISTRO=arch ;;
+esac
+if [ "$DISTRO" != debian ] && [ "$BUILD_FROM_SOURCE" -eq 1 ]; then
+    echo "ERROR: --build-from-source is available on Debian and Ubuntu only." >&2
+    exit 2
+fi
+
+# Fedora and Arch: install packages by name (or an .rpm / .pkg.tar.zst file) and
+# record those that were not installed before. Only the packages asked for are
+# recorded; dnf and pacman mark what they pull in as dependencies and remove it
+# with them again, if nothing else needs it.
+pkg_name_of() {
+    case "$1" in
+        *.rpm) rpm -qp --qf '%{NAME}\n' "$1" 2>/dev/null ;;
+        *.pkg.tar.*) pacman -Qp "$1" 2>/dev/null | awk '{print $1}' ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+pkg_installed() {
+    case "$DISTRO" in
+        fedora) rpm -q "$1" >/dev/null 2>&1 ;;
+        arch) pacman -Q "$1" >/dev/null 2>&1 ;;
+        *) dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii' ;;
+    esac
+}
+
+sys_install() {
+    local arg name status=0 wanted=()
+    for arg in "$@"; do
+        name="$(pkg_name_of "$arg")"
+        pkg_installed "$name" || wanted+=("$name")
+    done
+    case "$DISTRO" in
+        # Without weak dependencies: dnf does not take those away on removal.
+        fedora) sudo dnf install -y --setopt=install_weak_deps=False "$@" || status=$? ;;
+        arch)
+            if ! sudo pacman -S --needed --noconfirm "$@"; then
+                status=1
+                echo "If pacman could not download a package, upgrade the system first"
+                echo "(sudo pacman -Syu), restart if the kernel was updated, and run install.sh again."
+            fi ;;
+    esac
+    for name in "${wanted[@]}"; do
+        pkg_installed "$name" && record "$DISTRO_PM" "$name"
+    done
+    return "$status"
+}
+
+sys_install_file() {
+    local name status=0
+    name="$(pkg_name_of "$1")"
+    [ -n "$name" ] || return 1
+    local was=0
+    pkg_installed "$name" && was=1
+    case "$DISTRO" in
+        fedora) sudo dnf install -y --setopt=install_weak_deps=False "$1" || status=$? ;;
+        arch) sudo pacman -U --noconfirm "$1" || status=$? ;;
+    esac
+    if [ "$was" -eq 0 ] && pkg_installed "$name"; then
+        record "$DISTRO_PM" "$name"
+    fi
+    return "$status"
+}
+
+case "$DISTRO" in
+    fedora) DISTRO_PM=dnf ;;
+    arch) DISTRO_PM=pacman ;;
+    *) DISTRO_PM=apt ;;
+esac
+
 echo "Install manifest: $MANIFEST"
 
 # Refresh package lists once; repeated only after adding a repository
 echo
 echo "=== Updating package lists ==="
 
-sudo apt update
+case "$DISTRO" in
+    debian) sudo apt update ;;
+    fedora) sudo dnf makecache ;;
+    arch)
+        # Refreshing the lists without upgrading (pacman -Sy) would make a
+        # partial upgrade, which Arch does not support. The lists of the last
+        # full upgrade are used; if they are too old, installing fails and says so.
+        echo "Using the package lists of the last system upgrade (pacman -Syu)." ;;
+esac
 
 # ------------------------------------------------------------
 # 1. Install EVDI
@@ -173,19 +265,76 @@ echo "=== Checking EVDI ==="
 #
 # They are intentionally NOT recorded in the manifest:
 # other DKMS modules may depend on them.
-if ! dpkg -s "linux-headers-$(uname -r)" >/dev/null 2>&1; then
-    sudo apt install -y "linux-headers-$(uname -r)"
-fi
+case "$DISTRO" in
+debian)
+    if ! dpkg -s "linux-headers-$(uname -r)" >/dev/null 2>&1; then
+        sudo apt install -y "linux-headers-$(uname -r)"
+    fi
 
-EVDI_LIB="$(first_available libevdi1 libevdi0)"
-EVDI_DEV="$(first_available libevdi-dev libevdi0-dev)"
+    EVDI_LIB="$(first_available libevdi1 libevdi0)"
+    EVDI_DEV="$(first_available libevdi-dev libevdi0-dev)"
 
-if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
-   ! dpkg -s "$EVDI_LIB" >/dev/null 2>&1 || \
-   ! dpkg -s "$EVDI_DEV" >/dev/null 2>&1; then
+    if ! dpkg -s evdi-dkms >/dev/null 2>&1 || \
+       ! dpkg -s "$EVDI_LIB" >/dev/null 2>&1 || \
+       ! dpkg -s "$EVDI_DEV" >/dev/null 2>&1; then
 
-    apt_install evdi-dkms "$EVDI_LIB" "$EVDI_DEV"
-fi
+        apt_install evdi-dkms "$EVDI_LIB" "$EVDI_DEV"
+    fi ;;
+fedora)
+    if ! rpm -q "kernel-devel-$(uname -r)" >/dev/null 2>&1; then
+        if ! sudo dnf install -y "kernel-devel-$(uname -r)"; then
+            echo "ERROR: the headers of the running kernel ($(uname -r)) are not available." >&2
+            echo "Update the system (sudo dnf upgrade), restart, and run install.sh again." >&2
+            exit 1
+        fi
+    fi
+    # Fedora has no EVDI package; the negativo17 repository has one, built for
+    # each Fedora release. Only the EVDI packages are taken from it, so it
+    # never replaces anything else on the system.
+    EVDI_REPO=/etc/yum.repos.d/screen-spawner-evdi.repo
+    if [ ! -e "$EVDI_REPO" ]; then
+        record rootfile "$EVDI_REPO"
+        sudo tee "$EVDI_REPO" >/dev/null <<'REPO'
+[screen-spawner-evdi]
+name=EVDI from negativo17 Multimedia, for Screen Spawner
+baseurl=https://negativo17.org/repos/multimedia/fedora-$releasever/$basearch/
+enabled=1
+gpgcheck=1
+gpgkey=https://negativo17.org/repos/RPM-GPG-KEY-slaanesh
+includepkgs=dkms-evdi,libevdi
+REPO
+    fi
+    keys_before="$(rpm -q gpg-pubkey 2>/dev/null | sort)"
+    if ! pkg_installed dkms-evdi || ! pkg_installed libevdi; then
+        sys_install dkms-evdi libevdi
+    fi
+    # The repository's signing key, imported by dnf on first use.
+    while read -r key; do
+        [ -n "$key" ] && record rpmkey "$key"
+    done < <(comm -13 <(printf '%s\n' "$keys_before") <(rpm -q gpg-pubkey 2>/dev/null | sort))
+    pkg_installed dkms-evdi || { echo "ERROR: EVDI could not be installed." >&2; exit 1; } ;;
+arch)
+    # The headers package belongs to the running kernel's package: linux,
+    # linux-lts, linux-zen...
+    kernel_pkg="$(pacman -Qqo "/usr/lib/modules/$(uname -r)" 2>/dev/null | head -n 1)"
+    headers_pkg="${kernel_pkg:-linux}-headers"
+    if ! pacman -Q "$headers_pkg" >/dev/null 2>&1; then
+        sudo pacman -S --needed --noconfirm "$headers_pkg"
+    fi
+    # EVDI is in the AUR only: build its package here, as an AUR helper would.
+    if ! pacman -Q evdi-dkms >/dev/null 2>&1; then
+        sys_install base-devel git dkms
+        aur_dir="$(mktemp -d)"
+        git clone --depth 1 https://aur.archlinux.org/evdi-dkms.git "$aur_dir/evdi-dkms"
+        # makepkg may also make a -debug package; only the module package is installed.
+        if (cd "$aur_dir/evdi-dkms" && makepkg --syncdeps --rmdeps --noconfirm); then
+            evdi_pkg="$(ls "$aur_dir"/evdi-dkms/evdi-dkms-[0-9]*.pkg.tar.* 2>/dev/null | head -n 1)"
+            [ -n "$evdi_pkg" ] && sys_install_file "$evdi_pkg"
+        fi
+        rm -rf "$aur_dir"
+        pacman -Q evdi-dkms >/dev/null 2>&1 || { echo "ERROR: EVDI could not be built from the AUR." >&2; exit 1; }
+    fi ;;
+esac
 
 # EVDI creates its devices when it loads, one per device that can connect
 # at once: Hermes uses an existing device without root access to
@@ -227,8 +376,17 @@ fi
 # would lose its virtual display after the first reboot.
 if ! grep -qsxF evdi /etc/modules /etc/modules-load.d/*.conf; then
     echo "Enabling EVDI at boot..."
-    record line "/etc/modules"$'\t'"evdi"
-    echo evdi | sudo tee -a /etc/modules >/dev/null
+    if [ "$DISTRO" = debian ]; then
+        record line "/etc/modules"$'\t'"evdi"
+        echo evdi | sudo tee -a /etc/modules >/dev/null
+    else
+        if [ ! -d /etc/modules-load.d ]; then
+            record rootdir /etc/modules-load.d
+            sudo mkdir -p /etc/modules-load.d
+        fi
+        record rootfile /etc/modules-load.d/screen-spawner-evdi.conf
+        echo evdi | sudo tee /etc/modules-load.d/screen-spawner-evdi.conf >/dev/null
+    fi
 fi
 
 # Release package checksums are pinned here, never fetched alongside the package.
@@ -236,6 +394,26 @@ select_package() {
     local ID= VERSION_ID= ID_LIKE= UBUNTU_CODENAME= VERSION_CODENAME=
     [ -r /etc/os-release ] || return 1
     . /etc/os-release
+    PACKAGE_RELEASE=v0.2.0
+    case "$DISTRO" in
+    fedora)
+        [ "$(uname -m)" = x86_64 ] || return 1
+        case "$VERSION_ID" in
+            45) PACKAGE_SYSTEM=fedora45
+                PACKAGE_SHA256="bc3a830ae060e62c13cff4b884a4054236990ff4329aa93d2c10dd64400bc2d7" ;;
+            *) return 1 ;;
+        esac
+        PACKAGE_RELEASE=v0.2.1
+        PACKAGE_FILE="hermes-screen-spawner-0.5.1-ss0.2.1.fc45.x86_64.rpm"
+        return 0 ;;
+    arch)
+        [ "$(uname -m)" = x86_64 ] || return 1
+        PACKAGE_SYSTEM=arch
+        PACKAGE_SHA256="48e02195daf123b96ff3480f833b0c620bc5028eac57a14ffce8ebecc17c713e"
+        PACKAGE_RELEASE=v0.2.1
+        PACKAGE_FILE="hermes-screen-spawner-0.5.1.ss0.2.1-1-x86_64.pkg.tar.zst"
+        return 0 ;;
+    esac
     [ "$(dpkg --print-architecture)" = amd64 ] || return 1
     PACKAGE_SYSTEM=
     case "$ID:$VERSION_ID" in
@@ -289,8 +467,11 @@ confirm_source_build() {
 
 install_release_package() {
     local download_dir package_path status=0
-    select_package || return 1
-    if dpkg-query -W -f='${db:Status-Abbrev}' hermes 2>/dev/null | grep -q '^ii'; then
+    if ! select_package; then
+        [ "$DISTRO" = debian ] || echo "ERROR: there is no Hermes package for this system ($OS_ID $OS_VERSION)." >&2
+        return 1
+    fi
+    if pkg_installed hermes || pkg_installed Hermes; then
         echo "WARNING: the official Hermes package is installed; leaving it in place."
         return 1
     fi
@@ -303,12 +484,16 @@ install_release_package() {
         cp -- "$SCREEN_SPAWNER_PACKAGE_DIR/$PACKAGE_FILE" "$package_path" || status=$?
     else
         if ! command -v curl >/dev/null 2>&1; then
-            apt_install curl ca-certificates || status=$?
+            if [ "$DISTRO" = debian ]; then
+                apt_install curl ca-certificates || status=$?
+            else
+                sys_install curl || status=$?
+            fi
         fi
         if [ "$status" -eq 0 ]; then
             curl --fail --location --retry 3 --connect-timeout 20 \
                 --max-time 600 --output "$package_path" \
-                "https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.0/$PACKAGE_FILE" || status=$?
+                "https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/$PACKAGE_RELEASE/$PACKAGE_FILE" || status=$?
         fi
     fi
     if [ "$status" -eq 0 ]; then
@@ -319,7 +504,11 @@ install_release_package() {
     fi
     if [ "$status" -eq 0 ]; then
         chmod 644 "$package_path"
-        apt_install "$package_path" || status=$?
+        if [ "$DISTRO" = debian ]; then
+            apt_install "$package_path" || status=$?
+        else
+            sys_install_file "$package_path" || status=$?
+        fi
     fi
     rm -rf -- "$download_dir"
     [ "$status" -eq 0 ] || return 1
@@ -334,6 +523,10 @@ PACKAGE_INSTALLED=0
 if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
     if install_release_package; then
         PACKAGE_INSTALLED=1
+    elif [ "$DISTRO" != debian ]; then
+        # The source build below uses apt; on Fedora and Arch it is not offered.
+        echo "ERROR: the Hermes package could not be installed." >&2
+        exit 1
     else
         confirm_source_build || exit 0
         echo "=== Building Hermes from source ==="
@@ -604,9 +797,14 @@ fi # source build and runtime asset installation
 echo
 echo "=== Checking Intel VAAPI ==="
 
-if ! dpkg -s intel-media-va-driver >/dev/null 2>&1; then
-    apt_install intel-media-va-driver
-fi
+case "$DISTRO" in
+    debian)
+        if ! dpkg -s intel-media-va-driver >/dev/null 2>&1; then
+            apt_install intel-media-va-driver
+        fi ;;
+    fedora) pkg_installed libva-intel-media-driver || sys_install libva-intel-media-driver ;;
+    arch) pkg_installed intel-media-driver || sys_install intel-media-driver ;;
+esac
 
 # ------------------------------------------------------------
 # 9. Check VAAPI
@@ -620,7 +818,11 @@ if command -v vainfo >/dev/null 2>&1; then
 else
     echo "WARNING: vainfo is not installed."
     echo "Installing vainfo for verification..."
-    apt_install vainfo
+    if [ "$DISTRO" = debian ]; then
+        apt_install vainfo
+    else
+        sys_install libva-utils
+    fi
     vainfo || true
 fi
 
@@ -695,6 +897,28 @@ ICON_ROOT="$HOME/.local/share/icons/hicolor"
 
 # Python with GTK 3 and the top bar icon library. Usually already there on a
 # GNOME desktop; apt_install records only what it adds.
+APPINDICATOR_NOTE=0
+if [ "$DISTRO" != debian ]; then
+    if [ "$DISTRO" = fedora ]; then
+        APP_PACKAGES=(python3-gobject gobject-introspection gtk3 libayatana-appindicator-gtk3 polkit)
+    else
+        APP_PACKAGES=(python-gobject gtk3 libayatana-appindicator polkit)
+    fi
+    if command -v gnome-shell >/dev/null 2>&1 && ! pkg_installed gnome-shell-extension-appindicator; then
+        APP_PACKAGES+=(gnome-shell-extension-appindicator)
+    fi
+    MISSING_PACKAGES=()
+    for pkg in "${APP_PACKAGES[@]}"; do
+        pkg_installed "$pkg" || MISSING_PACKAGES+=("$pkg")
+    done
+    if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+        sys_install "${MISSING_PACKAGES[@]}"
+    fi
+    if [[ " ${MISSING_PACKAGES[*]} " == *" gnome-shell-extension-appindicator "* ]]; then
+        gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com 2>/dev/null || true
+        APPINDICATOR_NOTE=1
+    fi
+else
 APP_PACKAGES=(python3-gi gir1.2-gtk-3.0)
 INDICATOR_PKG="$(first_available gir1.2-ayatanaappindicator3-0.1 || true)"
 [ -n "$INDICATOR_PKG" ] && APP_PACKAGES+=("$INDICATOR_PKG")
@@ -713,11 +937,11 @@ done
 if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
     apt_install "${MISSING_PACKAGES[@]}"
 fi
-APPINDICATOR_NOTE=0
 if [[ " ${MISSING_PACKAGES[*]} " == *" gnome-shell-extension-appindicator "* ]]; then
     # GNOME Shell sees a newly installed extension only after logging in again.
     gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com 2>/dev/null || true
     APPINDICATOR_NOTE=1
+fi
 fi
 
 # The app, its icons, and a copy of the uninstaller with the patch it needs,
