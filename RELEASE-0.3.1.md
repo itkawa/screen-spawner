@@ -12,6 +12,8 @@ Screen Spawner now installs on **Fedora 45** and **Arch Linux** too, and on ever
 - **Clean removal on both:** the installer records only the packages it asked for; on removal dnf and pacman take along the dependencies they pulled in, and a package that something else still needs stays.
 - Hermes packages for Fedora 45 (RPM) and Arch Linux in the builds release **v0.2.2**: the same Hermes patch as the Debian packages, plus Hermes [#118](https://github.com/MrOz59/Hermes/pull/118) for OpenSSL 4, which both systems ship.
 - **Packages:** `screen-spawner` for apt and dnf, with `hermes-screen-spawner` and EVDI as dependencies. The package sets EVDI up for four devices; the app, installed from a package, runs Hermes from `/usr/bin/sunshine`, keeps the sound on the computer, and its **Uninstall** button shows the package manager command.
+- **A computer that does not start, fixed and guarded against:** on a fast start the login screen could start before the computer's graphics card was ready, see only EVDI's virtual displays and give up, leaving a black screen. Now it waits for the real graphics card. And if a start ever does not reach the login screen, the next one goes without EVDI, once, and the app says why. How to start without EVDI by hand is in the README (Troubleshooting).
+- **Tested with four devices at once**, a tablet and three phones, with a video mirrored to all of them: no frame dropped, the CPU at 38% ([measurements](https://github.com/itkawa/screen-spawner/blob/main/docs/performance.md)).
 - **A Hermes fix for all systems** (builds **v0.2.2**): a stream that could not start, for example because another program held its video port, kept Hermes's control port, so every later connection failed with a port error until Hermes was restarted. Now the next connection works.
 
 ## Installation
@@ -35,7 +37,7 @@ cd screen-spawner
 
 Do not mix the two: if Screen Spawner was installed with `install.sh`, run `./uninstall.sh` before installing the package.
 
-Updating from 0.3.0: run `git pull` in the `screen-spawner` folder, then `./install.sh`.
+Updating from 0.3.0: run `git pull` in the `screen-spawner` folder, then `./install.sh`. Installed from a package, `sudo apt upgrade` or `sudo dnf upgrade` brings the packages `0.3.1-2`.
 
 ## Tested
 

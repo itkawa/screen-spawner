@@ -65,3 +65,9 @@ Use one way or the other. To move from `install.sh` to the package, run `./unins
 On plain GNOME, as on Debian or Fedora, also install `gnome-shell-extension-appindicator` for the top bar icon.
 
 Paired devices and Hermes settings in `~/.config/hermes` stay when Screen Spawner is removed, whichever way it was installed.
+
+## If the computer does not start
+
+If the computer stops at a black screen or never shows the login screen, start it once without the EVDI driver: while it starts, hold **Shift** (or press **Esc**) until the boot menu appears, select the usual entry, press **e**, add `modprobe.blacklist=evdi` at the end of the line that begins with `linux`, and press **Ctrl+X**. Screen Spawner and its settings stay as they were. Since the packages `0.3.1-2` Screen Spawner also does this by itself: after a start that did not reach the login screen, the next one goes without EVDI, once.
+
+Then update Screen Spawner and restart. More, including recovery mode: [Troubleshooting](README.md#the-computer-does-not-start-after-setting-up-screen-spawner) in the README.

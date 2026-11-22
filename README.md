@@ -20,9 +20,9 @@ Use an Android tablet as an extra screen for Linux, a phone as a portable displa
 3. **Open Screen Spawner** from the application menu, press **Start**, then [pair the device](#pair-a-tablet-or-phone-once-per-device) with the PIN Moonlight shows.
 4. **In Moonlight, choose Desktop:** the tablet becomes a second monitor.
 
-![HDMI monitor, laptop and Android tablet showing one desktop as three displays](docs/three-displays.jpg)
+![Six displays from one laptop: an HDMI monitor, the laptop screen with GNOME's display settings open, a tablet on a stand and three phones, each numbered by GNOME](docs/six-displays.jpg)
 
-*From left: HDMI monitor, laptop screen, and an Android tablet as the third display.*
+*Six displays from one laptop: the HDMI monitor (6), the laptop screen (1), a tablet (5) and three phones (2–4).*
 
 ![GNOME display settings with four displays: the laptop screen, the HDMI monitor, a tablet and a phone](docs/display-settings.png)
 
@@ -178,6 +178,7 @@ Screen Spawner does not change the Linux kernel. For the virtual monitor it reli
 
 * It installs `evdi-dkms` from your distribution's repositories (on Fedora `dkms-evdi` from negativo17, on Arch Linux built from the AUR), and the kernel headers it needs. DKMS builds EVDI as a separate module (`evdi.ko`) for each installed kernel and builds it again after a kernel update. It is loaded and unloaded like any other driver.
 * It writes `options evdi initial_device_count=4` to `/etc/modprobe.d/evdi.conf`, so the driver creates four devices at boot, one for each tablet or phone that can connect at the same time, and adds `evdi` to `/etc/modules` (on Fedora and Arch Linux, to `/etc/modules-load.d/screen-spawner-evdi.conf`), so the driver loads at boot. On Fedora it also adds `/etc/yum.repos.d/screen-spawner-evdi.repo` and the repository's signing key. **Devices at once** in the app changes the number; it takes effect after a restart. Unused devices cost nothing.
+* It adds the udev rule `/etc/udev/rules.d/72-screen-spawner-evdi.rules`, so the login screen waits for the computer's graphics card instead of starting with EVDI's virtual displays only, and the **safe start**: two small systemd services (`screen-spawner-safe-start.service` and `screen-spawner-start-ok.service` in `/usr/local/lib/systemd/system`, with their script in `/usr/local/lib/screen-spawner`). If a start of the computer does not reach the login screen, the next one goes without EVDI, once. The packages install the same files under `/usr/lib`.
 
 When EVDI loads, the kernel log says `evdi: module verification failed: signature and/or required key missing - tainting kernel`. That is normal for any driver DKMS builds on your computer instead of your distribution signing it: the kernel only notes that a module without its signature is loaded. Nothing is changed or broken by it. With Secure Boot on, the module has to be signed with a key enrolled in the firmware; Ubuntu offers to enroll one while it installs `evdi-dkms`.
 
@@ -303,6 +304,7 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * there was no noticeable latency in use. The latency has not been measured with instruments;
 * a three-hour session with video playing ran without a single desktop freeze;
 * an Android phone with Moonlight works as a second monitor too: picture, touch, mouse, and rearranging the monitors;
+* four devices at once, a tablet and three phones, with a fast-moving video mirrored to all of them for 2.5 minutes: no frame dropped and no device disconnected, with the CPU at 38% and the temperature at most 62 °C (see [docs/performance.md](docs/performance.md));
 * over **2.4 GHz Wi-Fi**, with the laptop and the tablet on the same network and about 20 other networks nearby, a fullscreen video played on the tablet (720p, extended display) for a minute, and no stutter was noticed. Hermes dropped no frames, and pings to the tablet lost nothing and mostly stayed under 20 ms, with rare spikes to about 50 ms. The same test on **5 GHz Wi-Fi** gave pings of 2–11 ms, without the occasional network delays of 20–50 ms seen on 2.4 GHz; no stutter was noticed on either. Mirrored mode, with the video fullscreen on the laptop and shown on the tablet, was checked the same way on both: no dropped frames and no stutter noticed. On a busy 2.4 GHz network short stutters are still possible, so 5 GHz Wi-Fi works best. The load on the computer and all the numbers are in [docs/performance.md](docs/performance.md).
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.
@@ -355,6 +357,39 @@ The rest of `patches/evdi-fix.patch` is planned to go to Hermes the same way: mi
 ---
 
 ## Troubleshooting
+
+### The computer does not start after setting up Screen Spawner
+
+If the computer stops at a black screen or never shows the login screen, for example after **Devices at once** was changed and the computer restarted, start it once without the EVDI driver. Nothing is lost: Screen Spawner and its settings stay as they were.
+
+**Once, from the boot menu.** While the computer starts, hold **Shift** (or press **Esc** repeatedly on newer computers) until the boot menu appears. Select the usual entry and press **e**. In the line that begins with `linux`, add a space and `modprobe.blacklist=evdi` at the end, then press **Ctrl+X** or **F10**. The computer starts without virtual screens, this time only.
+
+**Or in recovery mode.** In the boot menu choose **Advanced options**, then the entry that ends in **(recovery mode)**, then **root**, and press Enter. Then:
+
+```bash
+mount -o remount,rw /
+echo "blacklist evdi" > /etc/modprobe.d/disable-evdi.conf
+reboot
+```
+
+This keeps EVDI off until the file is removed.
+
+**Afterwards.** The usual cause was a race at startup: the login screen started before the computer's graphics card was ready and saw only the virtual screens. Since the packages `0.3.1-2` (and `install.sh` of the same day) a udev rule makes it wait for the graphics card. Update Screen Spawner (`sudo apt upgrade`, `sudo dnf upgrade`, or `git pull` and `./install.sh`), then turn EVDI on again:
+
+```bash
+sudo rm -f /etc/modprobe.d/disable-evdi.conf
+sudo reboot
+```
+
+On an older version, add the rule by hand before that:
+
+```bash
+echo 'SUBSYSTEM=="drm", KERNEL=="card[0-9]*", DRIVERS=="evdi", TAG-="master-of-seat"' | sudo tee /etc/udev/rules.d/72-screen-spawner-evdi.rules
+```
+
+**Safe start.** Since the same version Screen Spawner does the first step itself: if a start does not reach the login screen, the next one goes without EVDI, once, and the app says so when you press Start. Nothing in the settings changes, and the start after that loads EVDI as usual.
+
+If it still does not start, use the boot menu again, set **Devices at once** lower in the app, and [open an issue](https://github.com/itkawa/screen-spawner/issues) with the output of `journalctl -b -1 | grep -E "evdi|i915|gnome-shell|gdm"` from the last failed start.
 
 ### The prebuilt package does not work
 

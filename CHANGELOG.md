@@ -25,8 +25,16 @@ All notable changes to Screen Spawner are listed here.
 - The APT and DNF repositories are signed (key `280E 1BCC 0414 3CB4 07AB 28C1 E906 9072 32FE 0F54`).
 - `install.sh` stays for installing without a repository.
 
+### A computer that does not start
+
+- **The login screen waits for the real graphics card.** EVDI is loaded early at boot, and its virtual displays counted as a graphics card, so on a fast start the login screen could start before the computer's own graphics card was ready, find no screen and give up: the computer stopped at a black screen. A udev rule (`72-screen-spawner-evdi.rules`) keeps EVDI's displays from counting for that.
+- **Safe start:** if a start of the computer does not reach the login screen, the next one goes without EVDI, once, and the app says why and what to do. Nothing in the settings changes.
+- README and INSTALL.md say how to start without EVDI from the boot menu (`modprobe.blacklist=evdi`) or in recovery mode, and how to turn it on again.
+- The packages are `0.3.1-2`: `sudo apt upgrade` or `sudo dnf upgrade` brings the rule and the safe start; with `install.sh`, `git pull` and `./install.sh`.
+
 ### Also
 
+- Measured: four devices at once, a tablet and three phones, with a video mirrored to all of them, and a cloud game on the laptop mirrored to the tablet; no frame was dropped (see [docs/performance.md](docs/performance.md)).
 - The Hermes packages `0.5.1+ss0.2.2` (builds release v0.2.2, all systems) carry one more fix: a stream that could not start, for example because another program held its video port, kept Hermes's control port, so every later connection failed with a port error until Hermes was restarted. Now the failed start releases its ports and the next connection works.
 - The Hermes builds moved into the package repository [screen-spawner-packages](https://github.com/itkawa/screen-spawner-packages): its releases hold the Hermes packages and their source, its pages serve apt and dnf. Old `screen-spawner-hermes-builds` links lead there.
 - `uninstall.sh` rebuilds an icon cache in `~/.local/share/icons` if another program made one there, so that it no longer lists the app's removed icons; otherwise Screen Spawner installed afterwards as a package showed an empty icon.
@@ -37,7 +45,7 @@ All notable changes to Screen Spawner are listed here.
 
 ### Several devices at once
 
-- Each tablet or phone gets a screen of its own, all on one desktop: windows move between them as between physical monitors. Up to four devices at once by default.
+- Each tablet or phone gets a screen of its own, all on one desktop: windows move between them as between physical monitors. How many devices can connect at once is set in **Devices at once**.
 - One device leaving no longer disconnects the others, and Moonlight no longer says that the session was started on another device.
 - Coming back to Moonlight after it went to the background no longer fails with error 503.
 

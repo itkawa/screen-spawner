@@ -61,3 +61,46 @@ The laptop did not warm up over time, and the load did not grow.
 * Mirrored mode costs Hermes about half as much again as extended mode, because it copies a 1920×1080 frame instead of a 1280×720 one; for the system as a whole the difference is about one percent.
 * 2.4 GHz Wi-Fi worked without noticed stutter, but had occasional network delays of 20–50 ms; on 5 GHz there were practically none. 5 GHz Wi-Fi works best.
 * While idle, Hermes still encodes about 52 frames per second of an unchanged desktop, which keeps the GPU near its highest frequency instead of 300 MHz. Sending fewer frames while nothing changes would save power on battery; this is planned as a change to Hermes.
+
+## Cloud gaming on the laptop, mirrored to the tablet
+
+Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop and displays. A game streamed from a cloud gaming service played in Google Chrome on the laptop screen; the tablet mirrored the laptop screen over Wi-Fi. Five one-minute runs while playing, about six minutes in all; the first minute, while the game was loading, is left out.
+
+| | While playing |
+|---|---|
+| CPU, whole system | 17–25% |
+| Chrome with the cloud game | 136–159% of one thread |
+| Hermes | 32–56% of one thread |
+| GNOME Shell | 16–37% of one thread |
+| Intel GPU busy | 52–59% |
+| CPU temperature, average / maximum | 52–54 / 61 °C |
+| Stream to the tablet | 1280×720, 51–58 fps, encoding 2.4–2.5 ms per frame |
+| Stream bitrate | 0.8–4.1 Mbit/s |
+| Dropped frames | 0 of 24 375 |
+
+* Most of the load is the browser decoding the cloud game; the stream to the tablet adds a third to a half of one thread, 3–5% of the CPU.
+* A game changes the picture every frame, so Hermes encodes at the full frame rate, as with a video; in mirrored mode it also copies the whole 1920×1080 laptop screen for each frame. It used 32–36% of one thread in most minutes, up to 56% in a busier one.
+* The tablet got every frame; the Wi-Fi link had no errors or dropped packets while carrying both the cloud game and the stream to the tablet.
+
+## One device and four devices
+
+Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop, GNOME on Wayland. A fast-moving video (about 30 fps) played in Google Chrome on the laptop screen, mirrored to the devices over Wi-Fi; each run lasted 2.5 minutes, the length of the video. With four devices (a tablet and three phones) the BenQ HDMI monitor was in the mirror too; with one device (the tablet) it was not connected.
+
+| | One device | Four devices |
+|---|---|---|
+| CPU, whole system | 14% | 38% |
+| Hermes | 28% of one thread | 178% of one thread |
+| Chrome with the video | 112% of one thread | 160% of one thread |
+| GNOME Shell | 12% of one thread | 40% of one thread |
+| Intel GPU busy | 26% | 64% |
+| CPU temperature, average / maximum | 47 / 54 °C | 53 / 62 °C |
+| Wi-Fi transmit | 3.6 Mbit/s | 12.4 Mbit/s |
+| Frames per second, per device | 34 | about 33 |
+| Encoding time per frame | 2.5 ms | 3.6 ms |
+| Dropped frames | 0 of 179 854 | 0 of 104 222 |
+
+* Every device got the video's own frame rate: four devices got as many frames per second as one, so the laptop kept up with all of them.
+* Wi-Fi traffic grows with the number of devices, about 3 Mbit/s each for this video.
+* Hermes's load grows faster than the number of devices, about six times for four: each device has its own encoder, and in mirrored mode each frame is copied for each of them. The laptop still had room: 38% of the CPU, 64% of the GPU, at most 62 °C, and encoding took 3.6 ms of the 16.7 ms a frame has at 60 fps.
+* No frame was dropped and no device disconnected in either run.
+* In short: on an ordinary laptop with integrated Intel graphics, four devices at once got the video without a single dropped frame, with the CPU at 38% and the temperature at most 62 °C. A home Wi-Fi network carries the four streams easily, at about 3 Mbit/s per device.
