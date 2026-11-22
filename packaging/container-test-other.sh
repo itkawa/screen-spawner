@@ -5,19 +5,19 @@ set -euo pipefail
 system=$TEST_SYSTEM
 mode=$TEST_MODE
 if [ "$system" = fedora45 ]; then
-    package=/packages/hermes-screen-spawner-0.5.1-ss0.2.1.fc45.x86_64.rpm
+    package=/packages/hermes-screen-spawner-0.5.1-ss0.2.2.fc45.x86_64.rpm
     # The container image leaves out documentation; the package notices are checked.
     sed -i '/^tsflags=nodocs/d' /etc/dnf/dnf.conf 2>/dev/null || true
     dnf -y install sudo git curl kmod which binutils findutils python3 procps-ng util-linux shadow-utils
 else
-    package=/packages/hermes-screen-spawner-0.5.1.ss0.2.1-1-x86_64.pkg.tar.zst
+    package=/packages/hermes-screen-spawner-0.5.1.ss0.2.2-1-x86_64.pkg.tar.zst
     sed -i 's|^NoExtract.*usr/share/doc.*||' /etc/pacman.conf
     pacman -Syu --noconfirm --needed sudo git curl kmod which binutils findutils python procps-ng
 fi
 
 if [ "$mode" = package ]; then
     if [ "$system" = fedora45 ]; then
-        test "$(rpm -qp --qf '%{NAME} %{VERSION}-%{RELEASE}' "$package")" = "hermes-screen-spawner 0.5.1-ss0.2.1.fc45"
+        test "$(rpm -qp --qf '%{NAME} %{VERSION}-%{RELEASE}' "$package")" = "hermes-screen-spawner 0.5.1-ss0.2.2.fc45"
         test "$(rpm -qp --qf '%{PACKAGER}%{VENDOR}' "$package" | grep -c itkawa)" = 1
         ! rpm -qp --scripts "$package" | grep -q .
         sed -n '/^\[screen-spawner-evdi\]/,$p' /project/install.sh | sed -n '1,/^REPO$/p' | sed '$d' > /etc/yum.repos.d/screen-spawner-evdi.repo
@@ -26,7 +26,7 @@ if [ "$mode" = package ]; then
         rpm -ql hermes-screen-spawner > /tmp/ss-package-files
     else
         tar -xOf "$package" .PKGINFO | tee /tmp/pkginfo
-        grep -qx 'pkgver = 0.5.1.ss0.2.1-1' /tmp/pkginfo
+        grep -qx 'pkgver = 0.5.1.ss0.2.2-1' /tmp/pkginfo
         ! tar -tf "$package" | grep -qx .INSTALL
         pacman -U --noconfirm --assume-installed evdi=1.15.1 "$package"
         pacman -Qlq hermes-screen-spawner > /tmp/ss-package-files
@@ -40,11 +40,11 @@ if [ "$mode" = package ]; then
     for f in AGPL-3.0.txt THIRD-PARTY-NOTICES.md THIRD-PARTY-LICENSES.txt SOURCE copyright; do
         test -s "/usr/share/doc/hermes-screen-spawner/$f"
     done
-    grep -q 'releases/download/v0.2.1/hermes-screen-spawner-0.2.1-source.tar.xz' /usr/share/doc/hermes-screen-spawner/SOURCE
+    grep -q 'releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz' /usr/share/doc/hermes-screen-spawner/SOURCE
     test "$(grep -l 'screen-spawner-source-notice' /usr/share/hermes/web/*.html | wc -l)" = 8
-    test "$(grep -l 'releases/download/v0.2.1/hermes-screen-spawner-0.2.1-source.tar.xz' /usr/share/hermes/web/*.html | wc -l)" = 8
+    test "$(grep -l 'releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz' /usr/share/hermes/web/*.html | wc -l)" = 8
     grep -q 'screen-spawner/blob/v0.3.1/packaging/THIRD-PARTY-NOTICES.md' /usr/share/hermes/web/index.html
-    grep -q 'releases/download/v0.2.1/hermes-screen-spawner-0.2.1-source.tar.xz' /usr/share/doc/hermes-screen-spawner/THIRD-PARTY-NOTICES.md
+    grep -q 'releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz' /usr/share/doc/hermes-screen-spawner/THIRD-PARTY-NOTICES.md
     command -v xrandr && command -v gdbus
     while IFS= read -r path; do
         if [ -f "$path" ] || [ -L "$path" ]; then echo "$path"; fi

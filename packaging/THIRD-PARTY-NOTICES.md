@@ -15,10 +15,8 @@ work. The Web UI provides a direct, no-charge source download link.
 
 The complete release source attachments are:
 
-- Debian, Ubuntu and Linux Mint packages (builds v0.2.0):
-  https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.0/hermes-screen-spawner-0.2.0-source.tar.xz
-- Fedora and Arch Linux packages (builds v0.2.1):
-  https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.1/hermes-screen-spawner-0.2.1-source.tar.xz
+- All packages (builds v0.2.2): Debian, Ubuntu, Linux Mint, Fedora and Arch Linux:
+  https://github.com/itkawa/screen-spawner-packages/releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz
 
 It contains the modified Hermes sources, recursive submodule contents, build
 scripts, fetched Boost/json sources, web dependencies/preferred-form sources,

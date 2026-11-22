@@ -10,10 +10,9 @@ Screen Spawner now installs on **Fedora 45** and **Arch Linux** too, and on ever
 - **Fedora 45:** `install.sh` uses dnf. EVDI comes from the [negativo17](https://negativo17.org) Multimedia repository, which the installer adds for its two EVDI packages only (`dkms-evdi`, `libevdi`), so it never replaces anything else; `uninstall.sh` removes the repository and its signing key again.
 - **Arch Linux:** `install.sh` uses pacman and builds `evdi-dkms` from the AUR with `makepkg`, as an AUR helper would. It does not upgrade the system: run `sudo pacman -Syu` first (and restart if the kernel was updated).
 - **Clean removal on both:** the installer records only the packages it asked for; on removal dnf and pacman take along the dependencies they pulled in, and a package that something else still needs stays.
-- Hermes packages for Fedora 45 (RPM) and Arch Linux in the builds release **v0.2.1**: the same Hermes patch as the Debian packages, plus Hermes [#118](https://github.com/MrOz59/Hermes/pull/118) for OpenSSL 4, which both systems ship.
+- Hermes packages for Fedora 45 (RPM) and Arch Linux in the builds release **v0.2.2**: the same Hermes patch as the Debian packages, plus Hermes [#118](https://github.com/MrOz59/Hermes/pull/118) for OpenSSL 4, which both systems ship.
 - **Packages:** `screen-spawner` for apt and dnf, with `hermes-screen-spawner` and EVDI as dependencies. The package sets EVDI up for four devices; the app, installed from a package, runs Hermes from `/usr/bin/sunshine`, keeps the sound on the computer, and its **Uninstall** button shows the package manager command.
-
-On Ubuntu, Linux Mint and Debian the Hermes packages stay the same (builds v0.2.0).
+- **A Hermes fix for all systems** (builds **v0.2.2**): a stream that could not start, for example because another program held its video port, kept Hermes's control port, so every later connection failed with a port error until Hermes was restarted. Now the next connection works.
 
 ## Installation
 

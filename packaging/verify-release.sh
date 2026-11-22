@@ -22,11 +22,10 @@ assert release['draft'] is False
 assert release['tag_name']=='v0.3.1'
 print('Release is public:', release['html_url'])
 PY
-# Both builds releases the installer downloads from: v0.2.0 (Debian, Ubuntu,
-# Mint) and v0.2.1 (Fedora, Arch Linux).
-for builds in 0.2.0 0.2.1; do
+# The builds release the installer downloads from: v0.2.2, all systems.
+for builds in 0.2.2; do
     curl -fsSL --retry 3 --connect-timeout 20 --max-time 60 \
-        "https://api.github.com/repos/itkawa/screen-spawner-hermes-builds/releases/tags/v$builds" -o "$tmp/builds-release.json"
+        "https://api.github.com/repos/itkawa/screen-spawner-packages/releases/tags/v$builds" -o "$tmp/builds-release.json"
     python3 - "$tmp/builds-release.json" "$builds" "$(wc -l < "$workspace/packages-$builds/SHA256SUMS")" <<'BUILDS'
 import json, sys
 release=json.load(open(sys.argv[1]))
@@ -38,12 +37,12 @@ BUILDS
     while read -r checksum filename; do
         [[ "$filename" == hermes-screen-spawner* ]]
         curl -fL --retry 3 --connect-timeout 20 --max-time 600 \
-            "https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v$builds/$filename" -o "$tmp/$filename"
+            "https://github.com/itkawa/screen-spawner-packages/releases/download/v$builds/$filename" -o "$tmp/$filename"
         printf '%s  %s\n' "$checksum" "$tmp/$filename" | sha256sum -c -
         rm -f "$tmp/$filename"
     done < "$workspace/packages-$builds/SHA256SUMS"
     curl -fsSL --retry 3 --connect-timeout 20 --max-time 60 \
-        "https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v$builds/SHA256SUMS" -o "$tmp/SHA256SUMS"
+        "https://github.com/itkawa/screen-spawner-packages/releases/download/v$builds/SHA256SUMS" -o "$tmp/SHA256SUMS"
     cmp "$workspace/packages-$builds/SHA256SUMS" "$tmp/SHA256SUMS"
 done
 echo '=== PASS: matching main/tag, public release and every asset checksum ==='

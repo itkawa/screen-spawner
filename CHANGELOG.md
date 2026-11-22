@@ -7,10 +7,6 @@ All notable changes to Screen Spawner are listed here.
 - Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 - Touch per device and a choice of how the tablet's touches act; sound per device.
 
-## Unreleased
-
-- `uninstall.sh` rebuilds an icon cache in `~/.local/share/icons` if another program made one there, so that it no longer lists the app's removed icons; otherwise Screen Spawner installed afterwards as a package showed an empty icon.
-
 ## 0.3.1
 
 ### Fedora and Arch Linux
@@ -19,18 +15,21 @@ All notable changes to Screen Spawner are listed here.
 - On Fedora, EVDI comes from the negativo17 Multimedia repository, added for its two EVDI packages only (`dkms-evdi`, `libevdi`); `uninstall.sh` removes the repository and its signing key again.
 - On Arch Linux, the installer builds `evdi-dkms` from the AUR with `makepkg`. It does not upgrade the system: upgrade it first with `sudo pacman -Syu`.
 - The installer records only the packages it asks dnf or pacman for; on removal they take the dependencies they pulled in with them, and a package that something else still needs stays.
-- Hermes packages for Fedora 45 (RPM) and Arch Linux (`.pkg.tar.zst`) in the builds release v0.2.1, with the same patch as the Debian packages plus Hermes #118 (`patches/openssl4.patch`), which both need for OpenSSL 4. The Debian and Ubuntu packages are unchanged (v0.2.0).
+- Hermes packages for Fedora 45 (RPM) and Arch Linux (`.pkg.tar.zst`) in the builds release v0.2.2, with the same patch as the Debian packages plus Hermes #118 (`patches/openssl4.patch`), which both need for OpenSSL 4.
 - A source build (`--build-from-source`) stays available on Debian and Ubuntu only.
 
 ### Install with the package manager
 
 - Screen Spawner is a package now: `sudo apt install screen-spawner` on Ubuntu, Linux Mint and Debian, `sudo dnf install screen-spawner` on Fedora, after adding the [package repository](https://github.com/itkawa/screen-spawner-packages) with one command. It updates with the system and uninstalls with the package manager.
-- The package installs the app system-wide (`/usr/share/screen-spawner`, the `screen-spawner` command, the menu entry), with Hermes (`hermes-screen-spawner`, the same packages as builds v0.2.0 and v0.2.1) and EVDI as dependencies, and sets EVDI up for four devices, loaded at boot. Removing it (`purge` on Debian) also removes the EVDI setting it created.
+- The package installs the app system-wide (`/usr/share/screen-spawner`, the `screen-spawner` command, the menu entry), with Hermes (`hermes-screen-spawner`, the packages of builds v0.2.2) and EVDI as dependencies, and sets EVDI up for four devices, loaded at boot. Removing it (`purge` on Debian) also removes the EVDI setting it created.
 - The APT and DNF repositories are signed (key `280E 1BCC 0414 3CB4 07AB 28C1 E906 9072 32FE 0F54`).
 - `install.sh` stays for installing without a repository.
 
 ### Also
 
+- The Hermes packages `0.5.1+ss0.2.2` (builds release v0.2.2, all systems) carry one more fix: a stream that could not start, for example because another program held its video port, kept Hermes's control port, so every later connection failed with a port error until Hermes was restarted. Now the failed start releases its ports and the next connection works.
+- The Hermes builds moved into the package repository [screen-spawner-packages](https://github.com/itkawa/screen-spawner-packages): its releases hold the Hermes packages and their source, its pages serve apt and dnf. Old `screen-spawner-hermes-builds` links lead there.
+- `uninstall.sh` rebuilds an icon cache in `~/.local/share/icons` if another program made one there, so that it no longer lists the app's removed icons; otherwise Screen Spawner installed afterwards as a package showed an empty icon.
 - Installed from a package, the app runs Hermes from `/usr/bin/sunshine` and passes `stream_audio=false` unless `~/.config/hermes/hermes.conf` sets it, so the sound stays on the computer's speakers as with `install.sh`. **Uninstall Screen Spawner…** shows the package manager command instead.
 - The app's hint for a missing EVDI driver no longer names Ubuntu's boot menu.
 

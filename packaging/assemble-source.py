@@ -87,7 +87,7 @@ assert len(locks) == 4 and len(set(locks.values())) == 1
 manifest = {
     'release':'Screen Spawner 0.3.0',
     'modified_by':'itkawa', 'modified_on':'2026-11-16',
-    'source_offer':'https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v0.2.0/hermes-screen-spawner-0.2.0-source.tar.xz',
+    'source_offer':'https://github.com/itkawa/screen-spawner-packages/releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz',
     'components':components, 'npm_packages':sorted(npm,key=lambda p:(p['name'],p['version'],p['path'])),
     'npm_lock_sha256':locks,
     'provenance':{

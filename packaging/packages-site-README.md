@@ -1,6 +1,6 @@
 # Screen Spawner packages
 
-APT and DNF repositories for [Screen Spawner](https://github.com/itkawa/screen-spawner): an Android tablet or phone as a second, third or further monitor for Linux over Wi-Fi, through the Moonlight app.
+Packages for [Screen Spawner](https://github.com/itkawa/screen-spawner): an Android tablet or phone as a second, third or further monitor for Linux over Wi-Fi, through the Moonlight app. This repository serves the APT and DNF repositories (GitHub Pages), and its [Releases](https://github.com/itkawa/screen-spawner-packages/releases) hold the patched Hermes packages with their complete source.
 
 ## Ubuntu, Linux Mint, Debian
 
@@ -41,6 +41,10 @@ To remove the repository, delete these files.
 
 `screen-spawner-packages.asc`, fingerprint `280E 1BCC 0414 3CB4 07AB  28C1 E906 9072 32FE 0F54`.
 
-## Contents
+## Hermes builds
 
-The packages are `screen-spawner` (the app) and `hermes-screen-spawner` (Hermes 0.5.1 with the Screen Spawner patch, GPL-3.0). The Hermes packages and their complete corresponding source are published in [screen-spawner-hermes-builds](https://github.com/itkawa/screen-spawner-hermes-builds/releases).
+`hermes-screen-spawner` is Hermes 0.5.1 ([MrOz59/Hermes](https://github.com/MrOz59/Hermes), revision 7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99) with my EVDI fixes: among them a virtual display for each connected device, so several tablets and phones can be connected at once. The Fedora and Arch Linux packages also carry Hermes #118 for OpenSSL 4. These are unofficial builds, not a Hermes release channel, and may be superseded by official Hermes packages.
+
+Each [release](https://github.com/itkawa/screen-spawner-packages/releases) has the packages for Ubuntu 22.04, 24.04 (also Mint 22), 26.04, Debian 13, Fedora 45 and Arch Linux, `SHA256SUMS`, and a complete corresponding-source archive: original licenses, dependency sources, exact revisions and rebuilding scripts. Release v0.2.2 is for Screen Spawner 0.3.1; older releases stay for older versions. Until 22 November 2026 the releases were in `screen-spawner-hermes-builds`; old links lead here.
+
+Hermes and my build scripts are GPL-3.0-only. The shared-web Web UI component is AGPL-3.0-only; other components retain their original licenses. All required notices and preferred sources are in the source archive. My patch and packaging scripts: https://github.com/itkawa/screen-spawner/tree/v0.3.1/packaging

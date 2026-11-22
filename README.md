@@ -136,7 +136,7 @@ cd screen-spawner
 ./install.sh
 ```
 
-The script downloads a prebuilt, patched Hermes package from the separate [screen-spawner-hermes-builds repository](https://github.com/itkawa/screen-spawner-hermes-builds) (release **v0.2.0** for Ubuntu, Mint and Debian, **v0.2.1** for Fedora and Arch Linux),
+The script downloads a prebuilt, patched Hermes package from the [Screen Spawner packages repository](https://github.com/itkawa/screen-spawner-packages/releases) (release **v0.2.2**),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
 to load at boot, and installs the **Screen Spawner** app with its launcher in the
 application menu (see [Usage](#usage)). A **Hermes** launcher is added as well, for

@@ -1078,3 +1078,19 @@ index 969dd75e..1029c001 100644
      }
  #endif
  
+diff --git a/src/thread_safe.h b/src/thread_safe.h
+index 9657de06..06c8fc1e 100644
+--- a/src/thread_safe.h
++++ b/src/thread_safe.h
+@@ -442,6 +442,11 @@ namespace safe {
+       if (!_count) {
+         new (_object_buf.data()) element_type;
+         if (_construct(*reinterpret_cast<element_type *>(_object_buf.data()))) {
++          // Destroy what the failed start left behind, or it keeps its
++          // resources until the process ends: a stream that could not bind
++          // its video port kept the control port bound, and every later
++          // stream then failed on that port as well.
++          reinterpret_cast<element_type *>(_object_buf.data())->~element_type();
+           return ptr_t {nullptr};
+         }
+       }

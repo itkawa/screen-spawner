@@ -24,6 +24,6 @@ available=$(awk '/MemAvailable:/ {print int($2/1024/1024)}' /proc/meminfo)
 # The log keeps the result; the container is removed, so repeated runs need no cleanup.
 docker run --rm --name "ss-test-021-$system-$mode" --memory=6g --cpus=4 --user root \
     -e TEST_SYSTEM="$system" -e TEST_MODE="$mode" \
-    -v "$project:/project:ro" -v "$workspace/packages-0.2.0:/packages:ro" \
+    -v "$project:/project:ro" -v "$workspace/packages-0.2.2:/packages:ro" \
     "$image" bash /project/packaging/container-test.sh \
     2>&1 | tee "$workspace/docker-tests/package-test-$system-$mode.log"

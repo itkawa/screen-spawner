@@ -30,6 +30,7 @@ echo "=== apt install screen-spawner ==="
 apt-get install -y screen-spawner > /tmp/install.log 2>&1 || { tail -40 /tmp/install.log; fail install; }
 grep -i -E "screen spawner:|evdi" /tmp/install.log | tail -8 || true
 v1=$(dpkg-query -W -f="\${Version}" screen-spawner)
+h1=$(dpkg-query -W -f="\${Version}" hermes-screen-spawner)
 echo "installed $v1, Hermes $(dpkg-query -W -f="\${Version}" hermes-screen-spawner)"
 test -x /usr/bin/screen-spawner || fail "no /usr/bin/screen-spawner"
 test "$(readlink -f /usr/bin/screen-spawner)" = /usr/share/screen-spawner/app/screen-spawner || fail realpath
@@ -53,8 +54,9 @@ sed -i "s|$base/s1|$base/s2|" /etc/apt/sources.list.d/screen-spawner.sources
 apt-get update -qq
 apt-get upgrade -y > /tmp/upgrade.log 2>&1 || { tail -30 /tmp/upgrade.log; fail upgrade; }
 v2=$(dpkg-query -W -f="\${Version}" screen-spawner)
-echo "upgraded $v1 -> $v2"
-[ "$v1" != "$v2" ] || fail "not upgraded"
+h2=$(dpkg-query -W -f="\${Version}" hermes-screen-spawner)
+echo "upgraded $v1 -> $v2, Hermes $h1 -> $h2"
+[ "$v1" != "$v2" ] || [ "$h1" != "$h2" ] || fail "not upgraded"
 grep -qx "options evdi initial_device_count=4" /etc/modprobe.d/evdi.conf || fail "evdi.conf after upgrade"
 echo "=== remove ==="
 apt-get remove -y screen-spawner >/dev/null

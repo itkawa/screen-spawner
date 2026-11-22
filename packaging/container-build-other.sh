@@ -31,6 +31,10 @@ for attempt in 1 2 3; do
     [ "$attempt" -lt 3 ] || exit 1
     sleep 20
 done
+# A retained build tree has the shaders link from the previous build, and
+# CMake 4.3+ cannot replace a link to a directory: the configure step makes
+# it again.
+[ ! -L build/assets/shaders ] || rm build/assets/shaders
 configure() {
     cmake -S . -B build -G Ninja \
         -DSUNSHINE_ENABLE_CUDA=OFF -DCUDA_FAIL_ON_MISSING=OFF \

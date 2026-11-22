@@ -6,14 +6,14 @@
 #                  rpm/ repositories, signed, the key and install-repo.sh
 # The AUR packages need the published tag's tarball: aur-prepare.sh, after it.
 # Usage: build-package-repos.sh VERSION OUT
-# Hermes packages: HERMES_DEBS (default builds v0.2.0) and HERMES_RPMS (v0.2.1).
+# Hermes packages: HERMES_DEBS (default builds v0.2.2) and HERMES_RPMS (v0.2.2).
 # SPDX-License-Identifier: GPL-3.0-only
 set -euo pipefail
 version=${1:?version} out=${2:?output dir}
 here="$(cd "$(dirname "$0")" && pwd)"
 builds="/home/shared/screen spawner hermes"
-hermes_debs=${HERMES_DEBS:-$builds/packages-0.2.0}
-hermes_rpms=${HERMES_RPMS:-$builds/packages-0.2.1}
+hermes_debs=${HERMES_DEBS:-$builds/packages-0.2.2}
+hermes_rpms=${HERMES_RPMS:-$builds/packages-0.2.2}
 keydir=${KEY_DIR:-/home/user/work/PROJECTS/ScreenTablet/signing-key}
 export GNUPGHOME="$keydir/gnupg"
 export SIGNING_KEY=${SIGNING_KEY:-280E1BCC04143CB407AB28C1E906907232FE0F54}

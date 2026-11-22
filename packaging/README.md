@@ -1,4 +1,4 @@
-# Hermes packages for Screen Spawner 0.3.0
+# Hermes packages for Screen Spawner 0.3.1
 
 Run from the Screen Spawner repository on an amd64 Linux Docker host:
 
@@ -15,7 +15,7 @@ failure. The runner checks `MemAvailable >= 7 GiB` before every build and prints
 `free -g`. Stop and consult the owner if that check fails. Allow roughly an hour
 per system. Never run the installer on the build host.
 
-Outputs: `../packages-0.2.0/`; logs: `../docker-tests/package-build-*.log`.
+Outputs: `../packages-0.2.2/`; logs: `../docker-tests/package-build-*.log`.
 Override with `PACKAGE_OUTPUT_DIR` and `PACKAGE_LOG_DIR`. Docker volumes named
 `ss-package-<system>` preserve source and build objects for a retry. Build
 packages are installed only inside the container. Do not delete these volumes
@@ -50,7 +50,7 @@ available alongside every distributed package. These scripts reproduce the
 build process; apt/npm repositories are live, so this does not promise
 byte-for-byte reproducibility.
 
-## Fedora and Arch Linux packages (builds v0.2.1)
+## Fedora and Arch Linux packages
 
 `./packaging/build-other.sh fedora45` and `./packaging/build-other.sh arch` build
 Hermes in a `fedora:45` or `archlinux:latest` container with the same patch plus
@@ -58,7 +58,9 @@ Hermes in a `fedora:45` or `archlinux:latest` container with the same patch plus
 `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` and, for the fetched Boost, one line in
 Boost.Locale's CMakeLists.txt; `container-build-other.sh` adds both.
 `package-other.sh` stages the same files as `package-deb.sh` and makes an RPM with
-CPack or an Arch package with `makepkg`. Outputs go to `../packages-0.2.1/`.
+CPack or an Arch package with `makepkg`. Outputs go to `../packages-0.2.2/`. A retained build volume keeps the
+`build/assets/shaders` link of the previous build, which CMake 4.3+ cannot
+replace; `container-build-other.sh` removes it before configuring.
 
 `./packaging/test-other.sh SYSTEM package` installs, checks and removes the
 package; `./packaging/test-other.sh SYSTEM installer` runs `install.sh` and
@@ -70,7 +72,7 @@ Arch Linux is rolling: rebuild and retest its package when its libraries move on
 ## Validation
 
 After all four builds, pin their actual SHA256 values in `install.sh` and write
-`../packages-0.2.0/SHA256SUMS`. Do not publish placeholder checksums.
+`../packages-0.2.2/SHA256SUMS`. Do not publish placeholder checksums.
 
 ```bash
 python3 packaging/check-installer.py
@@ -98,11 +100,11 @@ containers or host module directories are used.
 ## Publication by the owner
 
 Review the logs and changes first. The owner publishes; the agent does not.
-Create the screen-spawner-hermes-builds release v0.2.0 with the four `.deb`
-files, the source archive and `SHA256SUMS` from `../packages-0.2.0/` (packages
-0.5.1+ss0.2.0; the v0.1.1 release stays for Screen Spawner 0.2.0). Then push
-main, tag v0.3.0 and publish the Screen Spawner release with
-`RELEASE-0.3.0.md`; it links to the builds release and needs no duplicated
+Create the screen-spawner-packages release v0.2.2 with the six packages
+(four `.deb`, the Fedora `.rpm`, the Arch `.pkg.tar.zst`), the source archive
+and `SHA256SUMS` from `../packages-0.2.2/` (packages 0.5.1+ss0.2.2; the older
+releases stay). Then push main, tag the Screen Spawner release and publish it
+with its `RELEASE-*.md`; it links to the builds release and needs no duplicated
 binary attachments.
 
 Before testing on the live desktop, stop Hermes and run
@@ -157,11 +159,14 @@ without fetching application/npm/Boost/json source from the network. The
 archive's README-SOURCE.md explains system-tool bootstrap and rebuilding the
 prepared codec libraries.
 
-## Separate artifact repository
+## Artifact repository
 
-Publish the four DEBs, corresponding-source archive and SHA256SUMS in
-https://github.com/itkawa/screen-spawner-hermes-builds/releases/tag/v0.2.0.
-The Screen Spawner v0.3.0 release links there. Full builds require 7 GiB
+Publish the six packages, corresponding-source archive and SHA256SUMS in
+https://github.com/itkawa/screen-spawner-packages/releases/tag/v0.2.2.
+The Screen Spawner v0.3.1 release links there. The same repository serves the
+apt and dnf repositories (below). It was called `screen-spawner-hermes-builds`
+until 22 November 2026; GitHub redirects the old links, which the packages up
+to `0.5.1+ss0.2.2` and older Screen Spawner releases still carry. Full builds require 7 GiB
 available; --package-only requires 1 GiB and never compiles Hermes.
 
 ## Local build workspace
@@ -174,13 +179,14 @@ project parent directory. This checkout uses `/home/shared/screen spawner hermes
 
 The `screen-spawner` package, with `hermes-screen-spawner` and EVDI as
 dependencies, is served from https://itkawa.github.io/screen-spawner-packages
-(the `itkawa/screen-spawner-packages` repository, GitHub Pages from `main`).
+(the `itkawa/screen-spawner-packages` repository, GitHub Pages from `main`;
+its releases hold the Hermes packages and their source).
 
 * `stage-app.sh` lays out the app as installed under `/usr`; the deb, the rpm
   and the AUR package all use it.
 * `package-app-deb.sh` and `package-app-rpm.sh` build the app packages (noarch).
 * `build-apt-repo.sh` and `build-dnf-repo.sh` build the signed repositories
-  with the Hermes packages of builds v0.2.0 (deb) and v0.2.1 (rpm).
+  with the Hermes packages of builds v0.2.2.
 * `build-package-repos.sh VERSION OUT` does all of it: packages in
   `OUT/packages`, the repository working tree in `OUT/site`. It needs the
   signing key (`KEY_DIR`, a GnuPG home with key
@@ -194,5 +200,6 @@ dependencies, is served from https://itkawa.github.io/screen-spawner-packages
   `hermes-screen-spawner-bin`; `aur-prepare.sh VERSION OUT` fills in the
   checksum of the tag's tarball and writes `.SRCINFO`, after the tag is public.
 
-A new version: `build-package-repos.sh`, copy `OUT/site` over the
-`screen-spawner-packages` working tree (keeping `.git`), commit and push.
+A new version: `build-package-repos.sh`, then replace `apt/`, `rpm/` and the
+site files in the `screen-spawner-packages` working tree (the builds directory)
+with `OUT/site`, commit and push. Its README is `packages-site-README.md`.

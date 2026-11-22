@@ -37,6 +37,7 @@ echo "=== dnf install screen-spawner ==="
 dnf install -y screen-spawner > /tmp/install.log 2>&1 || { tail -40 /tmp/install.log; fail install; }
 grep -i -E "screen spawner:|importing|imported|signature" /tmp/install.log | head -10 || true
 v1=$(rpm -q --qf "%{VERSION}" screen-spawner)
+h1=$(rpm -q hermes-screen-spawner)
 echo "installed $v1, Hermes $(rpm -q hermes-screen-spawner)"
 rpm -q --qf "%{NAME}: %{SIGPGP:pgpsig}%{RSAHEADER:pgpsig}\n" screen-spawner hermes-screen-spawner
 rpm -q --qf "%{SIGPGP}%{RSAHEADER}%{OPENPGP}" screen-spawner 2>/dev/null | grep -qv "(none)" || true
@@ -62,8 +63,9 @@ echo "=== upgrade ==="
 sed -i "s|$base/s1|$base/s2|" /etc/yum.repos.d/screen-spawner.repo
 dnf upgrade -y --refresh > /tmp/upgrade.log 2>&1 || { tail -30 /tmp/upgrade.log; fail upgrade; }
 v2=$(rpm -q --qf "%{VERSION}" screen-spawner)
-echo "upgraded $v1 -> $v2"
-[ "$v1" != "$v2" ] || fail "not upgraded"
+h2=$(rpm -q hermes-screen-spawner)
+echo "upgraded $v1 -> $v2, Hermes $h1 -> $h2"
+[ "$v1" != "$v2" ] || [ "$h1" != "$h2" ] || fail "not upgraded"
 grep -qx "options evdi initial_device_count=4" /etc/modprobe.d/evdi.conf || fail "evdi.conf after upgrade"
 test -e /var/lib/screen-spawner/evdi.conf.created || fail "marker lost on upgrade"
 echo "=== remove ==="

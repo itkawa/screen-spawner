@@ -37,13 +37,14 @@ with tempfile.TemporaryDirectory() as tmp:
     release.write_text('ID=ubuntu\nVERSION_ID=22.04\n')
     result = subprocess.run(['bash', '-c', prelude + '\n! select_package'],
                             env=dict(env, TEST_ARCH='arm64'), check=True)
-    package = root / 'hermes-screen-spawner_0.5.1+ss0.2.0_ubuntu22.04_amd64.deb'
+    package = root / 'hermes-screen-spawner_0.5.1+ss0.2.2_ubuntu22.04_amd64.deb'
     package.write_bytes(b'fixture package; apt is mocked')
     checksum = hashlib.sha256(package.read_bytes()).hexdigest()
     # Replace the actual checksum only in the fixture, whether pending or final.
     import re
     fixture = re.sub(r'(ubuntu22\.04\) PACKAGE_SHA256=")[^"]+', r'\g<1>' + checksum, prelude)
-    mocks = '\napt_install() { echo apt-called >> "$TEST_APT_LOG"; }\n'
+    # install.sh sets DISTRO and defines pkg_installed before select_package.
+    mocks = '\nDISTRO=debian\npkg_installed() { return 1; }\napt_install() { echo apt-called >> "$TEST_APT_LOG"; }\n'
     logfile = root / 'apt.log'
     testenv = dict(env, SCREEN_SPAWNER_PACKAGE_DIR=str(root), TEST_APT_LOG=str(logfile))
     subprocess.run(['bash', '-c', fixture + mocks + '\ninstall_release_package'], env=testenv,

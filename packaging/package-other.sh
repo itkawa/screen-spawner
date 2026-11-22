@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 set -euo pipefail
 system=${1:?system required}
-builds=0.2.1
+builds=0.2.2
 app=0.3.1
 stage=/build/package-stage
 rm -rf "$stage"
@@ -42,7 +42,7 @@ Upstream: https://github.com/MrOz59/Hermes/tree/7de12dc2d1c009c5cc4c0e67b8c537ea
 Modifications and build scripts: https://github.com/itkawa/screen-spawner/tree/v$app
 See patches/evdi-fix.patch, patches/openssl4.patch and packaging/ in that repository.
 Full corresponding-source archive (including dependencies and build scripts):
-https://github.com/itkawa/screen-spawner-hermes-builds/releases/download/v$builds/hermes-screen-spawner-$builds-source.tar.xz
+https://github.com/itkawa/screen-spawner-packages/releases/download/v$builds/hermes-screen-spawner-$builds-source.tar.xz
 Web UI shared-web component: AGPL-3.0-only; see AGPL-3.0.txt and notices.
 SOURCE
 binary=$(readlink -f "$stage/usr/bin/sunshine")
