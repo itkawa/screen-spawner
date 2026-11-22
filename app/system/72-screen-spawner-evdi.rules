@@ -1,0 +1,5 @@
+# Screen Spawner: EVDI virtual displays do not make a seat graphical. Without
+# this, the login screen can start as soon as EVDI is loaded, before the real
+# graphics card is ready, find no screen and give up.
+# SPDX-License-Identifier: GPL-3.0-only
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", DRIVERS=="evdi", TAG-="master-of-seat"

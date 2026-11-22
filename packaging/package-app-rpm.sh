@@ -9,6 +9,8 @@ version=${1:?version required, for example 1.0.0}
 here="$(cd "$(dirname "$0")/.." && pwd)"
 out=${2:-$here/packages-app}
 image=${FEDORA_IMAGE:-fedora:45}
+# The package release: a new build of the same app version (PKG_RELEASE).
+release=${PKG_RELEASE:-1}
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 
@@ -23,7 +25,7 @@ chmod 755 "$stage" "$stage/root"
 cat > "$stage/screen-spawner.spec" <<EOF
 Name:           screen-spawner
 Version:        $version
-Release:        1
+Release:        $release
 Summary:        Android tablet or phone as a second monitor over Wi-Fi
 License:        GPL-3.0-only
 URL:            https://github.com/itkawa/screen-spawner
@@ -70,11 +72,17 @@ if ! grep -q '^evdi ' /proc/modules 2>/dev/null; then
         echo "then restart the computer."
     }
 fi
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || :
+    udevadm control --reload || :
+    udevadm trigger --subsystem-match=drm --action=change || :
+fi
 exit 0
 
 %postun
 # Removed, not upgraded: the EVDI settings the package created go too.
 if [ "\$1" -eq 0 ]; then
+    rm -f /var/lib/screen-spawner/boot-pending
     MARK=/var/lib/screen-spawner/evdi.conf.created
     if [ -e "\$MARK" ]; then
         rm -f /etc/modprobe.d/evdi.conf "\$MARK"
@@ -90,6 +98,12 @@ exit 0
 /usr/share/applications/screen-spawner.desktop
 /usr/share/icons/hicolor/*/apps/screen-spawner*
 /usr/lib/modules-load.d/screen-spawner-evdi.conf
+/usr/lib/udev/rules.d/72-screen-spawner-evdi.rules
+/usr/lib/screen-spawner
+/usr/lib/systemd/system/screen-spawner-safe-start.service
+/usr/lib/systemd/system/screen-spawner-start-ok.service
+/usr/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service
+/usr/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service
 %doc /usr/share/doc/screen-spawner/README.md
 %doc /usr/share/doc/screen-spawner/CHANGELOG.md
 %doc /usr/share/doc/screen-spawner/docs

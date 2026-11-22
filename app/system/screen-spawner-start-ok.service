@@ -1,0 +1,10 @@
+[Unit]
+Description=Screen Spawner safe start: note that this start reached a graphical session
+After=display-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/screen-spawner/screen-spawner-boot-guard ok
+
+[Install]
+WantedBy=graphical.target

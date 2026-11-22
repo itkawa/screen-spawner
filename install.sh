@@ -389,6 +389,48 @@ if ! grep -qsxF evdi /etc/modules /etc/modules-load.d/*.conf; then
     fi
 fi
 
+# The login screen waits for the real graphics card, not for EVDI's virtual
+# ones; and a start that did not reach the login screen is followed by one
+# without EVDI (app/system/). The packages install the same files under /usr/lib.
+install_root_file() {   # install_root_file MODE SOURCE DEST
+    [ -e "$3" ] || [ -L "$3" ] || record rootfile "$3"
+    sudo install -D -m "$1" "$2" "$3"
+}
+link_root_file() {      # link_root_file TARGET LINK
+    if [ ! -d "$(dirname "$2")" ]; then
+        record rootdir "$(dirname "$2")"
+        sudo mkdir -p "$(dirname "$2")"
+    fi
+    [ -e "$2" ] || [ -L "$2" ] || record rootfile "$2"
+    sudo ln -sfn "$1" "$2"
+}
+echo "Setting up the safe start..."
+SAFE_DIR=/usr/local/lib/screen-spawner
+[ -d "$SAFE_DIR" ] || record rootdir "$SAFE_DIR"
+[ -d /var/lib/screen-spawner ] || record rootdir /var/lib/screen-spawner
+record rootfile /var/lib/screen-spawner/boot-pending
+install_root_file 644 "$SCRIPT_DIR/app/system/72-screen-spawner-evdi.rules" /etc/udev/rules.d/72-screen-spawner-evdi.rules
+install_root_file 755 "$SCRIPT_DIR/app/system/screen-spawner-boot-guard" "$SAFE_DIR/screen-spawner-boot-guard"
+# In /usr/local/lib/systemd/system, enabled by their links there: systemd
+# reads it like /usr/lib, and resetting the presets in /etc does not undo it.
+UNIT_DIR=/usr/local/lib/systemd/system
+for d in /usr/local/lib/systemd "$UNIT_DIR"; do
+    [ -d "$d" ] || record rootdir "$d"
+done
+for unit in screen-spawner-safe-start.service screen-spawner-start-ok.service; do
+    tmp_unit="$(mktemp)"
+    sed "s|/usr/lib/screen-spawner/|$SAFE_DIR/|" "$SCRIPT_DIR/app/system/$unit" > "$tmp_unit"
+    install_root_file 644 "$tmp_unit" "$UNIT_DIR/$unit"
+    rm -f "$tmp_unit"
+done
+link_root_file ../screen-spawner-safe-start.service "$UNIT_DIR/sysinit.target.wants/screen-spawner-safe-start.service"
+link_root_file ../screen-spawner-start-ok.service "$UNIT_DIR/graphical.target.wants/screen-spawner-start-ok.service"
+if [ -d /run/systemd/system ]; then
+    sudo systemctl daemon-reload || true
+    sudo udevadm control --reload || true
+    sudo udevadm trigger --subsystem-match=drm --action=change || true
+fi
+
 # Release package checksums are pinned here, never fetched alongside the package.
 select_package() {
     local ID= VERSION_ID= ID_LIKE= UBUNTU_CODENAME= VERSION_CODENAME=

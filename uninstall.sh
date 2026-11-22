@@ -501,6 +501,11 @@ if [ -f "$USER_ICON_CACHE" ] && command -v gtk-update-icon-cache >/dev/null 2>&1
     gtk-update-icon-cache -f -q -t "$(dirname "$USER_ICON_CACHE")" || true
 fi
 
+# Units of the safe start may have gone; systemd forgets them.
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl daemon-reload 2>/dev/null || true
+fi
+
 # ------------------------------------------------------------
 # 6. Update manifest
 # ------------------------------------------------------------

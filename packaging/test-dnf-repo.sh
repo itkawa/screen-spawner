@@ -36,7 +36,7 @@ cat /etc/yum.repos.d/screen-spawner.repo
 echo "=== dnf install screen-spawner ==="
 dnf install -y screen-spawner > /tmp/install.log 2>&1 || { tail -40 /tmp/install.log; fail install; }
 grep -i -E "screen spawner:|importing|imported|signature" /tmp/install.log | head -10 || true
-v1=$(rpm -q --qf "%{VERSION}" screen-spawner)
+v1=$(rpm -q --qf "%{VERSION}-%{RELEASE}" screen-spawner)
 h1=$(rpm -q hermes-screen-spawner)
 echo "installed $v1, Hermes $(rpm -q hermes-screen-spawner)"
 rpm -q --qf "%{NAME}: %{SIGPGP:pgpsig}%{RSAHEADER:pgpsig}\n" screen-spawner hermes-screen-spawner
@@ -62,17 +62,33 @@ PY
 echo "=== upgrade ==="
 sed -i "s|$base/s1|$base/s2|" /etc/yum.repos.d/screen-spawner.repo
 dnf upgrade -y --refresh > /tmp/upgrade.log 2>&1 || { tail -30 /tmp/upgrade.log; fail upgrade; }
-v2=$(rpm -q --qf "%{VERSION}" screen-spawner)
+v2=$(rpm -q --qf "%{VERSION}-%{RELEASE}" screen-spawner)
 h2=$(rpm -q hermes-screen-spawner)
 echo "upgraded $v1 -> $v2, Hermes $h1 -> $h2"
 [ "$v1" != "$v2" ] || [ "$h1" != "$h2" ] || fail "not upgraded"
 grep -qx "options evdi initial_device_count=4" /etc/modprobe.d/evdi.conf || fail "evdi.conf after upgrade"
+# The udev rule and the safe start: files, enabled units, and the guard itself.
+test -f /usr/lib/udev/rules.d/72-screen-spawner-evdi.rules || fail "udev rule"
+test -x /usr/lib/screen-spawner/screen-spawner-boot-guard || fail "boot guard"
+test -L /usr/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service || fail "safe start not enabled"
+test -L /usr/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service || fail "start-ok not enabled"
+test -f "$(readlink -f /usr/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service)" || fail "safe start link"
+/usr/lib/screen-spawner/screen-spawner-boot-guard start
+test -e /var/lib/screen-spawner/boot-pending || fail "no boot mark"
+test ! -e /run/modprobe.d/screen-spawner-safe-start.conf || fail "safe start on a good start"
+/usr/lib/screen-spawner/screen-spawner-boot-guard start
+grep -qx "blacklist evdi" /run/modprobe.d/screen-spawner-safe-start.conf || fail "no safe start after a failed start"
+test -e /run/screen-spawner/safe-start || fail "no mark for the app"
+rm -f /run/modprobe.d/screen-spawner-safe-start.conf /run/screen-spawner/safe-start
 test -e /var/lib/screen-spawner/evdi.conf.created || fail "marker lost on upgrade"
 echo "=== remove ==="
 dnf remove -y screen-spawner > /tmp/remove.log 2>&1 || { tail -20 /tmp/remove.log; fail remove; }
 test ! -e /usr/bin/screen-spawner || fail "binary left"
 test ! -e /usr/share/screen-spawner || fail "share left"
 test ! -e /usr/lib/modules-load.d/screen-spawner-evdi.conf || fail "modules-load left"
+test ! -e /usr/lib/udev/rules.d/72-screen-spawner-evdi.rules || fail "udev rule left"
+test ! -e /usr/lib/systemd/system/screen-spawner-safe-start.service || fail "unit left"
+test ! -e /var/lib/screen-spawner/boot-pending || fail "boot mark left"
 test ! -e /etc/modprobe.d/evdi.conf || fail "evdi.conf left"
 test ! -e /var/lib/screen-spawner || fail "state dir left"
 # dnf remove also takes away the dependencies nothing else needs.

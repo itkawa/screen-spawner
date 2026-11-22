@@ -5,7 +5,7 @@
 # Runs createrepo_c and rpmsign in a fedora container.
 # Usage: build-dnf-repo.sh SITE_DIR APP_RPM HERMES_RPM_DIR
 #   SITE_DIR        the repository's working copy (its rpm/ is rebuilt)
-#   APP_RPM         screen-spawner-<version>-1.noarch.rpm
+#   APP_RPM         screen-spawner-<version>-<release>.noarch.rpm
 #   HERMES_RPM_DIR  folder with hermes-screen-spawner-*.fc<N>.x86_64.rpm and SHA256SUMS
 # SECRET_KEY (armored secret key file) and SIGNING_KEY (fingerprint) sign.
 # SPDX-License-Identifier: GPL-3.0-only

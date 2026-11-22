@@ -67,6 +67,9 @@ START_ARG = "--start"
 EVDI_COUNT = "/sys/devices/evdi/count"
 # Where install.sh keeps the number of EVDI devices made at boot.
 EVDI_CONFIG = "/etc/modprobe.d/evdi.conf"
+# Left by the safe start (app/system/screen-spawner-boot-guard) when this start
+# went without EVDI because the last one did not reach the login screen.
+SAFE_START_MARK = "/run/screen-spawner/safe-start"
 # The choices offered for "Devices at once". The driver allows 16 for the whole
 # system, DisplayLink docks included; Wi-Fi and the graphics card limit
 # streaming to a few devices anyway.
@@ -137,6 +140,12 @@ def evdi_problem():
     """Why Hermes could not make a screen for a device now, or None. After a
     system update the EVDI driver may not have been built for the new kernel;
     the computer works on, only the tablet cannot connect."""
+    if not os.path.isdir("/sys/module/evdi") and os.path.exists(SAFE_START_MARK):
+        return ("The last start of the computer did not reach the login screen, so this time it "
+                "started without the EVDI driver. Nothing was changed; the next start loads it "
+                "as usual.\n\n"
+                "If Devices at once was changed just before, set it lower. To connect devices now, "
+                "in a terminal:\n    sudo modprobe evdi")
     if not os.path.isdir("/sys/module/evdi"):
         return ("The EVDI driver is not loaded, so Hermes cannot make a screen for a device.\n\n"
                 "In a terminal, try:\n    sudo modprobe evdi\n\n"

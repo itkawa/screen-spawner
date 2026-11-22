@@ -16,6 +16,8 @@ post_install() {
             echo "kernel (linux-headers, linux-lts-headers...) and restart."
         }
     fi
+    udevadm control --reload 2>/dev/null || true
+    udevadm trigger --subsystem-match=drm --action=change 2>/dev/null || true
 }
 
 post_upgrade() {
@@ -24,6 +26,7 @@ post_upgrade() {
 
 # The EVDI settings the package created go with it.
 post_remove() {
+    rm -f /var/lib/screen-spawner/boot-pending
     MARK=/var/lib/screen-spawner/evdi.conf.created
     if [ -e "$MARK" ]; then
         rm -f /etc/modprobe.d/evdi.conf "$MARK"

@@ -108,6 +108,11 @@ runuser -u tester -- env HOME=/home/tester bash -c '
         grep -qxF "Exec=\"/usr/bin/sunshine\"" "$HOME/.local/share/applications/hermes.desktop"
     fi
     grep -qxF "stream_audio = false" "$HOME/.config/hermes/hermes.conf"
+    test -f /etc/udev/rules.d/72-screen-spawner-evdi.rules || { echo "FAILED CHECK: test -f /etc/udev/rules.d/72-screen-spawner-evdi.rules"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -x /usr/local/lib/screen-spawner/screen-spawner-boot-guard || { echo "FAILED CHECK: test -x /usr/local/lib/screen-spawner/screen-spawner-boot-guard"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    grep -qxF "ExecStart=/usr/local/lib/screen-spawner/screen-spawner-boot-guard start" /usr/local/lib/systemd/system/screen-spawner-safe-start.service || { echo "FAILED CHECK: grep -qxF ExecStart=/usr/local/lib/screen-spawner/screen-spawner-boot-"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -L /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service || { echo "FAILED CHECK: test -L /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-s"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -L /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service || { echo "FAILED CHECK: test -L /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-star"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
     printf "y\n" | ./uninstall.sh
     test ! -e "$HOME/.local/state/screen-spawner/installed.list"
     test ! -e "$HOME/.local/share/applications/hermes.desktop"
@@ -118,5 +123,10 @@ test ! -e /usr/bin/sunshine
 test ! -e /usr/share/hermes
 test ! -e /etc/modprobe.d/evdi.conf
 ! grep -qxF evdi /etc/modules
+test ! -e /etc/udev/rules.d/72-screen-spawner-evdi.rules
+test ! -e /usr/local/lib/screen-spawner
+test ! -e /usr/local/lib/systemd/system/screen-spawner-safe-start.service
+test ! -e /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service
+test ! -e /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service
 ! dpkg-query -W -f='${db:Status-Abbrev}' hermes-screen-spawner 2>/dev/null | grep -q '^ii'
 echo "=== PASS: installer $TEST_MODE and complete manifest removal ==="

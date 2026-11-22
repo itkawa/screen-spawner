@@ -111,6 +111,11 @@ runuser -u tester -- env HOME=/home/tester PATH="/usr/local/bin:$PATH" bash -c '
     python3 -c "import gi; gi.require_version(\"Gtk\", \"3.0\"); gi.require_version(\"AyatanaAppIndicator3\", \"0.1\"); from gi.repository import Gtk, AyatanaAppIndicator3; print(\"app libraries: ok\")"
     test "$(cat /etc/modprobe.d/evdi.conf)" = "options evdi initial_device_count=4"
     grep -qxF evdi /etc/modules-load.d/screen-spawner-evdi.conf
+    test -f /etc/udev/rules.d/72-screen-spawner-evdi.rules || { echo "FAILED CHECK: test -f /etc/udev/rules.d/72-screen-spawner-evdi.rules"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -x /usr/local/lib/screen-spawner/screen-spawner-boot-guard || { echo "FAILED CHECK: test -x /usr/local/lib/screen-spawner/screen-spawner-boot-guard"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    grep -qxF "ExecStart=/usr/local/lib/screen-spawner/screen-spawner-boot-guard start" /usr/local/lib/systemd/system/screen-spawner-safe-start.service || { echo "FAILED CHECK: grep -qxF ExecStart=/usr/local/lib/screen-spawner/screen-spawner-boot-"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -L /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service || { echo "FAILED CHECK: test -L /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-s"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
+    test -L /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service || { echo "FAILED CHECK: test -L /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-star"; ls -laR /etc/udev/rules.d /usr/local/lib/screen-spawner /usr/local/lib/systemd 2>&1 | head -30; exit 1; }
     dkms status | tee /tmp/dkms-status
     grep -q "^evdi/.*$(uname -r).*installed" /tmp/dkms-status
     printf "y\n" | ./uninstall.sh
@@ -123,6 +128,11 @@ test ! -e /usr/bin/sunshine
 test ! -e /usr/share/hermes
 test ! -e /etc/modprobe.d/evdi.conf
 test ! -e /etc/modules-load.d/screen-spawner-evdi.conf
+test ! -e /etc/udev/rules.d/72-screen-spawner-evdi.rules
+test ! -e /usr/local/lib/screen-spawner
+test ! -e /usr/local/lib/systemd/system/screen-spawner-safe-start.service
+test ! -e /usr/local/lib/systemd/system/sysinit.target.wants/screen-spawner-safe-start.service
+test ! -e /usr/local/lib/systemd/system/graphical.target.wants/screen-spawner-start-ok.service
 test ! -e /etc/yum.repos.d/screen-spawner-evdi.repo
 if [ "$system" = fedora45 ]; then
     ! rpm -q dkms-evdi libevdi hermes-screen-spawner

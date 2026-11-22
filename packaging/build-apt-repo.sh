@@ -4,7 +4,7 @@
 # its own Hermes package and the same screen-spawner package.
 # Usage: build-apt-repo.sh SITE_DIR APP_DEB HERMES_DEB_DIR
 #   SITE_DIR        the repository's working copy (its apt/ is rebuilt)
-#   APP_DEB         screen-spawner_<version>_all.deb
+#   APP_DEB         screen-spawner_<version>-<release>_all.deb
 #   HERMES_DEB_DIR  folder with the four hermes-screen-spawner debs and SHA256SUMS
 # GNUPGHOME and SIGNING_KEY (fingerprint) select the signing key.
 # SPDX-License-Identifier: GPL-3.0-only

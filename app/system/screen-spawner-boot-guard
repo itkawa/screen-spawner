@@ -1,0 +1,50 @@
+#!/bin/sh
+# Screen Spawner's safe start. If the last start of the computer did not reach
+# a graphical session, this start goes without the EVDI driver, once; the
+# settings stay as they are. Screen Spawner then says why.
+#   start  early in the boot, before systemd-modules-load
+#   ok     after the display manager: clears the mark once a graphical
+#          session (the login screen or a desktop) has lasted 30 seconds
+# SPDX-License-Identifier: GPL-3.0-only
+STATE=/var/lib/screen-spawner
+PENDING=$STATE/boot-pending
+
+case "$1" in
+start)
+    mkdir -p "$STATE"
+    if [ -e "$PENDING" ]; then
+        mkdir -p /run/modprobe.d /run/screen-spawner
+        echo "blacklist evdi" > /run/modprobe.d/screen-spawner-safe-start.conf
+        : > /run/screen-spawner/safe-start
+        echo "The last start did not reach the login screen: EVDI stays off this time."
+    fi
+    : > "$PENDING"
+    ;;
+ok)
+    seen="" count=0 tries=0
+    while [ "$tries" -lt 120 ]; do
+        now=""
+        for s in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+            case $(loginctl show-session "$s" -p Type --value 2>/dev/null) in
+                x11|wayland) now=$s; break ;;
+            esac
+        done
+        if [ -n "$now" ] && [ "$now" = "$seen" ]; then
+            count=$((count + 1))
+        else
+            seen=$now count=0
+        fi
+        if [ -n "$seen" ] && [ "$count" -ge 6 ]; then
+            rm -f "$PENDING"
+            exit 0
+        fi
+        tries=$((tries + 1))
+        sleep 5
+    done
+    echo "No graphical session lasted 30 seconds: the next start goes without EVDI."
+    ;;
+*)
+    echo "Usage: $0 start|ok" >&2
+    exit 2
+    ;;
+esac

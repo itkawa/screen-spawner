@@ -1,0 +1,13 @@
+[Unit]
+Description=Screen Spawner safe start: no EVDI after a start that did not reach the login screen
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Before=systemd-modules-load.service sysinit.target
+RequiresMountsFor=/var/lib
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/screen-spawner/screen-spawner-boot-guard start
+
+[Install]
+WantedBy=sysinit.target
