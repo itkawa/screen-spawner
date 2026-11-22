@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 src=/build/Hermes
-stage=/export/hermes-screen-spawner-0.2.2-source
+stage=/export/hermes-screen-spawner-0.2.3-source
 mkdir -p "$stage/Hermes" "$stage/build-support"
 # Preserve exactly the patched sources and recursive submodule contents used.
 # Build objects and Git databases are not Corresponding Source.

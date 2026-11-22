@@ -7,6 +7,12 @@ All notable changes to Screen Spawner are listed here.
 - Disconnect the tablet from the app; a scale for the tablet alone; mirroring at a lower resolution; sound by screen; the order of the displays. See the [Roadmap](README.md#roadmap).
 - Touch per device and a choice of how the tablet's touches act; sound per device.
 
+## 0.3.2
+
+- **Mirror mode: connecting again after leaving works.** When a device mirrored the laptop screen and left, GNOME could bring its screen back mirrored on the next connection, already at the size of the laptop screen. Hermes then set the size Moonlight asked for inside that mirror, GNOME refused (“Monitor modes in logical monitor conflict”), Hermes removed the screen and Moonlight could not connect until GNOME was restarted. Now Hermes first gives the screen a place of its own, sets the size, and the app mirrors it again. In the Hermes packages `0.5.1+ss0.2.3` (builds release v0.2.3, all systems).
+- README and measurements: 2.4 GHz Wi-Fi is enough; four devices at once were tested over it.
+- README: the Android keyboard opens with a three-finger tap on the tablet.
+
 ## 0.3.1
 
 ### Fedora and Arch Linux

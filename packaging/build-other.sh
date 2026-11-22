@@ -8,7 +8,7 @@ case "$system" in fedora45|arch) ;; *) exit 2 ;; esac
 case "$mode" in build|--package-only) ;; *) exit 2 ;; esac
 project=$(cd "$(dirname "$0")/.." && pwd)
 . "$project/packaging/workspace.sh"
-output=${PACKAGE_OUTPUT_DIR:-$workspace/packages-0.2.2}
+output=${PACKAGE_OUTPUT_DIR:-$workspace/packages-0.2.3}
 logs=${PACKAGE_LOG_DIR:-$workspace/docker-tests}
 mkdir -p "$output" "$logs"
 exec 9>"$logs/.package-build.lock"
@@ -19,7 +19,7 @@ required=${SS_BUILD_MIN_GIB:-7}
 [ "$available" -ge "$required" ] || { echo "ERROR: less than $required GiB available." >&2; exit 1; }
 {
     docker build -f "$project/packaging/Dockerfile.$system" -t "screen-spawner-builder:$system" "$project"
-    container="ss-package-$system-0.2.2"
+    container="ss-package-$system-0.2.3"
     if docker container inspect "$container" >/dev/null 2>&1; then
         if [ "$mode" = --package-only ]; then
             marker=$(mktemp); printf 'Repackage\n' > "$marker"

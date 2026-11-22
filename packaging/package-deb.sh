@@ -43,12 +43,12 @@ python3 /project/packaging/collect-license-notices.py \
     third-party build/_deps/boost-src build/_deps/json-src node_modules
 
 cat > "$stage/usr/share/doc/hermes-screen-spawner/SOURCE" <<'SOURCE'
-Modified Hermes 0.5.1 for Screen Spawner 0.3.0 (GPL-3.0).
+Modified Hermes 0.5.1 for Screen Spawner 0.3.2 (GPL-3.0).
 Upstream: https://github.com/MrOz59/Hermes/tree/7de12dc2d1c009c5cc4c0e67b8c537ea9e370e99
-Modifications and build scripts: https://github.com/itkawa/screen-spawner/tree/v0.3.0
+Modifications and build scripts: https://github.com/itkawa/screen-spawner/tree/v0.3.2
 See patches/evdi-fix.patch and packaging/ in that repository.
 Full corresponding-source archive (including dependencies and build scripts):
-https://github.com/itkawa/screen-spawner-packages/releases/download/v0.2.2/hermes-screen-spawner-0.2.2-source.tar.xz
+https://github.com/itkawa/screen-spawner-packages/releases/download/v0.2.3/hermes-screen-spawner-0.2.3-source.tar.xz
 Web UI shared-web component: AGPL-3.0-only; see AGPL-3.0.txt and notices.
 SOURCE
 binary=$(readlink -f "$stage/usr/bin/sunshine")
@@ -67,11 +67,11 @@ runtime="$evdi, libavahi-client3, libavahi-common3, libxrandr2, libxfixes3, libx
 cat > /build/ScreenSpawnerCPack.cmake <<CONFIG
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_NAME "hermes-screen-spawner")
-set(CPACK_PACKAGE_VERSION "0.5.1+ss0.2.2~$system")
+set(CPACK_PACKAGE_VERSION "0.5.1+ss0.2.3~$system")
 set(CPACK_PACKAGE_CONTACT "itkawa <10118073+itkawa@users.noreply.github.com>")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "itkawa <10118073+itkawa@users.noreply.github.com>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Hermes with the Screen Spawner EVDI patch")
-set(CPACK_PACKAGE_DESCRIPTION "Hermes 0.5.1 modified for Screen Spawner 0.3.0. GPL-3.0.")
+set(CPACK_PACKAGE_DESCRIPTION "Hermes 0.5.1 modified for Screen Spawner 0.3.2. GPL-3.0.")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/itkawa/screen-spawner")
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "hermes")
@@ -79,10 +79,10 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS "$runtime")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_INSTALLED_DIRECTORIES "$stage;/")
 set(CPACK_PACKAGE_DIRECTORY "/build/cpack-artifacts")
-set(CPACK_PACKAGE_FILE_NAME "hermes-screen-spawner_0.5.1+ss0.2.2_${system}_amd64")
+set(CPACK_PACKAGE_FILE_NAME "hermes-screen-spawner_0.5.1+ss0.2.3_${system}_amd64")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 set(CPACK_STRIP_FILES ON)
 CONFIG
 cpack --config /build/ScreenSpawnerCPack.cmake -G DEB
 
-install -m644 "/build/cpack-artifacts/hermes-screen-spawner_0.5.1+ss0.2.2_${system}_amd64.deb" /out/
+install -m644 "/build/cpack-artifacts/hermes-screen-spawner_0.5.1+ss0.2.3_${system}_amd64.deb" /out/

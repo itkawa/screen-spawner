@@ -8,10 +8,10 @@ import sys
 import os
 
 web = Path(sys.argv[1])
-# Builds 0.2.2, for Screen Spawner 0.3.1, on all systems; package-other.sh
+# Builds 0.2.3, for Screen Spawner 0.3.2, on all systems; package-other.sh
 # passes the same values as SS_BUILDS and SS_APP.
-builds = os.environ.get('SS_BUILDS', '0.2.2')
-app = os.environ.get('SS_APP', '0.3.1')
+builds = os.environ.get('SS_BUILDS', '0.2.3')
+app = os.environ.get('SS_APP', '0.3.2')
 notice = f'''<footer id="screen-spawner-source-notice" style="padding:0.75rem;text-align:center;font-size:0.875rem">
 Modified Hermes for Screen Spawner {app} ·
 <a href="https://github.com/itkawa/screen-spawner-packages/releases/download/v{builds}/hermes-screen-spawner-{builds}-source.tar.xz" target="_blank" rel="noopener noreferrer">Download corresponding source</a> ·

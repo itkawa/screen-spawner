@@ -99,7 +99,7 @@ Unlike ordinary remote desktop, the tablet is not limited to a copy of the exist
 ## Requirements
 
 * **Ubuntu, Linux Mint, Debian, Fedora or Arch Linux:** the installer was tested on Ubuntu 22.04, 24.04 and 26.04, Linux Mint 22.2, Debian 13, Fedora 45 and Arch Linux. Streaming with the tablet was tested on Ubuntu 22.04 with GNOME (X11 and Wayland) and an Intel GPU. Hermes itself also supports other desktops and GPUs, but this setup has not been tried with them. The scripts install only the Intel VAAPI driver and build Hermes without CUDA, so NVIDIA GPUs get no hardware encoding from it
-* An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 5 GHz Wi-Fi works best, and Ethernet for the laptop even better. No internet connection is needed for streaming
+* An Android tablet with Moonlight, on the same home network as the laptop, over Wi-Fi. 2.4 GHz is enough: four devices at once were tested over it without a dropped frame. 5 GHz gives lower network delays, and Ethernet for the laptop helps more. No internet connection is needed for streaming
 * An internet connection during installation only: `install.sh` downloads packages (and the Hermes source code when building from source)
 
 ---
@@ -140,7 +140,7 @@ cd screen-spawner
 ./install.sh
 ```
 
-The script downloads a prebuilt, patched Hermes package from the [Screen Spawner packages repository](https://github.com/itkawa/screen-spawner-packages/releases) (release **v0.2.2**),
+The script downloads a prebuilt, patched Hermes package from the [Screen Spawner packages repository](https://github.com/itkawa/screen-spawner-packages/releases) (release **v0.2.3**),
 checks its SHA256 against the checksum pinned in `install.sh`, configures EVDI
 to load at boot, and installs the **Screen Spawner** app with its launcher in the
 application menu (see [Usage](#usage)). A **Hermes** launcher is added as well, for
@@ -289,6 +289,8 @@ The tablet works alongside the laptop's own input devices, the way a touchpad an
 
 A touch moves the cursor straight to the touched point on the tablet, also after the monitors are rearranged during the session.
 
+To type on the tablet, tap the screen with **three fingers** at once: Moonlight opens the Android keyboard, and the same tap closes it.
+
 ### Sound
 
 The tablet's speakers are not used. All sound, including from windows on the tablet, plays through the computer's own output: the laptop speakers, headphones, or whatever is selected in the system sound settings.
@@ -308,7 +310,7 @@ With Moonlight on one Android tablet, on Ubuntu 22.04 with GNOME on X11:
 * there was no noticeable latency in use. The latency has not been measured with instruments;
 * a three-hour session with video playing ran without a single desktop freeze;
 * an Android phone with Moonlight works as a second monitor too: picture, touch, mouse, and rearranging the monitors;
-* four devices at once, a tablet and three phones, with a fast-moving video mirrored to all of them for 2.5 minutes: no frame dropped and no device disconnected, with the CPU at 38% and the temperature at most 62 °C (see [docs/performance.md](docs/performance.md));
+* four devices at once, a tablet and three phones, over **2.4 GHz Wi-Fi**, with a fast-moving video mirrored to all of them for 2.5 minutes: no frame dropped and no device disconnected, with the CPU at 38% and the temperature at most 62 °C (see [docs/performance.md](docs/performance.md));
 * over **2.4 GHz Wi-Fi**, with the laptop and the tablet on the same network and about 20 other networks nearby, a fullscreen video played on the tablet (720p, extended display) for a minute, and no stutter was noticed. Hermes dropped no frames, and pings to the tablet lost nothing and mostly stayed under 20 ms, with rare spikes to about 50 ms. The same test on **5 GHz Wi-Fi** gave pings of 2–11 ms, without the occasional network delays of 20–50 ms seen on 2.4 GHz; no stutter was noticed on either. Mirrored mode, with the video fullscreen on the laptop and shown on the tablet, was checked the same way on both: no dropped frames and no stutter noticed. On a busy 2.4 GHz network short stutters are still possible, so 5 GHz Wi-Fi works best. The load on the computer and all the numbers are in [docs/performance.md](docs/performance.md).
 
 On GNOME on Wayland, in shorter sessions: extended and mirrored, touch input, and moving the tablet during a session.

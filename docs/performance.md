@@ -59,7 +59,7 @@ The laptop did not warm up over time, and the load did not grow.
 * The computer has plenty of room: Screen Spawner adds 2–3% CPU when idle, and with a fullscreen video the whole system stays at 13–14%.
 * No frame was dropped in any run, on either Wi-Fi band, and none in 25 minutes of continuous video; the temperature stayed at 45–46 °C.
 * Mirrored mode costs Hermes about half as much again as extended mode, because it copies a 1920×1080 frame instead of a 1280×720 one; for the system as a whole the difference is about one percent.
-* 2.4 GHz Wi-Fi worked without noticed stutter, but had occasional network delays of 20–50 ms; on 5 GHz there were practically none. 5 GHz Wi-Fi works best.
+* 2.4 GHz Wi-Fi worked without noticed stutter, but had occasional network delays of 20–50 ms; on 5 GHz there were practically none. 2.4 GHz is enough, though: four devices at once over it dropped no frame (see below); 5 GHz gives lower delays.
 * While idle, Hermes still encodes about 52 frames per second of an unchanged desktop, which keeps the GPU near its highest frequency instead of 300 MHz. Sending fewer frames while nothing changes would save power on battery; this is planned as a change to Hermes.
 
 ## Cloud gaming on the laptop, mirrored to the tablet
@@ -84,7 +84,7 @@ Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop and di
 
 ## One device and four devices
 
-Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop, GNOME on Wayland. A fast-moving video (about 30 fps) played in Google Chrome on the laptop screen, mirrored to the devices over Wi-Fi; each run lasted 2.5 minutes, the length of the video. With four devices (a tablet and three phones) the BenQ HDMI monitor was in the mirror too; with one device (the tablet) it was not connected.
+Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop, GNOME on Wayland, over the same 2.4 GHz Wi-Fi network (channel 10). A fast-moving video (about 30 fps) played in Google Chrome on the laptop screen, mirrored to the devices over Wi-Fi; each run lasted 2.5 minutes, the length of the video. With four devices (a tablet and three phones) the BenQ HDMI monitor was in the mirror too; with one device (the tablet) it was not connected.
 
 | | One device | Four devices |
 |---|---|---|
@@ -100,7 +100,7 @@ Measured on 22 November 2026 with Hermes `0.5.1+ss0.2.2`, the same laptop, GNOME
 | Dropped frames | 0 of 179 854 | 0 of 104 222 |
 
 * Every device got the video's own frame rate: four devices got as many frames per second as one, so the laptop kept up with all of them.
-* Wi-Fi traffic grows with the number of devices, about 3 Mbit/s each for this video.
+* Wi-Fi traffic grows with the number of devices, about 3 Mbit/s each for this video; 2.4 GHz carried all four without a dropped frame.
 * Hermes's load grows faster than the number of devices, about six times for four: each device has its own encoder, and in mirrored mode each frame is copied for each of them. The laptop still had room: 38% of the CPU, 64% of the GPU, at most 62 °C, and encoding took 3.6 ms of the 16.7 ms a frame has at 60 fps.
 * No frame was dropped and no device disconnected in either run.
 * In short: on an ordinary laptop with integrated Intel graphics, four devices at once got the video without a single dropped frame, with the CPU at 38% and the temperature at most 62 °C. A home Wi-Fi network carries the four streams easily, at about 3 Mbit/s per device.

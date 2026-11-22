@@ -303,7 +303,7 @@ index 89987125..677fe9bd 100644
  
      class display_vram_t: public display_t {
 diff --git a/src/platform/linux/virtual_display.cpp b/src/platform/linux/virtual_display.cpp
-index 84617d2e..9e2fa90f 100644
+index 84617d2e..09fb0b86 100644
 --- a/src/platform/linux/virtual_display.cpp
 +++ b/src/platform/linux/virtual_display.cpp
 @@ -153,7 +153,8 @@ namespace VDISPLAY {
@@ -335,7 +335,27 @@ index 84617d2e..9e2fa90f 100644
    // This backend is intentionally conservative: Mutter typically adopts the
    // HERMES-1 connector after Hermes connects it for a stream, so the critical
    // step is to *verify* that the virtual output is present and active in
-@@ -4519,6 +4525,86 @@ namespace VDISPLAY {
+@@ -3490,9 +3496,18 @@ namespace VDISPLAY {
+       }
+ 
+       std::vector<logical_monitor_t> layout = state.logical_monitors;
+-      const auto owner = std::find_if(layout.begin(), layout.end(), [&connector](const logical_monitor_t &lm) {
++      auto owner = std::find_if(layout.begin(), layout.end(), [&connector](const logical_monitor_t &lm) {
+         return std::find(lm.connectors.begin(), lm.connectors.end(), connector) != lm.connectors.end();
+       });
++      if (owner != layout.end() && owner->connectors.size() > 1) {
++        // Mutter can bring a reconnected output back mirrored, as it was the
++        // last time this set of monitors was present. Monitors in one logical
++        // monitor must share a mode ("Monitor modes in logical monitor
++        // conflict"), so give the output a logical monitor of its own first.
++        owner->connectors.erase(std::remove(owner->connectors.begin(), owner->connectors.end(), connector),
++                                owner->connectors.end());
++        owner = layout.end();
++      }
+       if (owner == layout.end()) {
+         int right_edge = 0;
+         // A layout is measured in logical pixels, so the right edge has to come
+@@ -4519,6 +4534,86 @@ namespace VDISPLAY {
  
      static void unwatch_layout() {}
  #endif
@@ -422,7 +442,7 @@ index 84617d2e..9e2fa90f 100644
    }  // namespace mutter
  
    EvdiBuffer::EvdiBuffer(uint32_t width, uint32_t height):
-@@ -5096,10 +5182,22 @@ namespace VDISPLAY {
+@@ -5096,10 +5191,22 @@ namespace VDISPLAY {
  
    constexpr int EVDI_DEVICE_SEARCH_LIMIT = 64;
  
@@ -446,7 +466,7 @@ index 84617d2e..9e2fa90f 100644
          return i;
        }
      }
-@@ -5123,7 +5221,7 @@ namespace VDISPLAY {
+@@ -5123,7 +5230,7 @@ namespace VDISPLAY {
      BOOST_LOG(info) << "[VDISPLAY] Added EVDI device; waiting for its device index.";
      for (int attempt = 0; attempt < 125; ++attempt) {
        for (int i = 0; i < EVDI_DEVICE_SEARCH_LIMIT; ++i) {
@@ -455,7 +475,7 @@ index 84617d2e..9e2fa90f 100644
            BOOST_LOG(info) << "[VDISPLAY] EVDI device available at index " << i;
            return i;
          }
-@@ -5140,6 +5238,19 @@ namespace VDISPLAY {
+@@ -5140,6 +5247,19 @@ namespace VDISPLAY {
    // card0 is usually the physical GPU, even when the first EVDI device is 0.
    // Discover the card through sysfs instead of assuming they are the same.
    static int find_evdi_drm_card(int device_index) {
@@ -475,7 +495,7 @@ index 84617d2e..9e2fa90f 100644
      const auto expected_device = "evdi." + std::to_string(device_index);
      std::vector<int> evdi_cards;
  
-@@ -5307,7 +5418,128 @@ namespace VDISPLAY {
+@@ -5307,7 +5427,128 @@ namespace VDISPLAY {
      dtd[17] = 0x1E; // Digital separate sync, positive H and V
    }
  
@@ -605,7 +625,7 @@ index 84617d2e..9e2fa90f 100644
      static unsigned char edid[256]; // Support for 1 extension block
      memset(edid, 0, sizeof(edid));
  
-@@ -5324,8 +5556,10 @@ namespace VDISPLAY {
+@@ -5324,8 +5565,10 @@ namespace VDISPLAY {
      // Product code
      edid[10] = 0x01; edid[11] = 0x00;
  
@@ -618,7 +638,7 @@ index 84617d2e..9e2fa90f 100644
  
      // Week and year of manufacture (week 1, 2024)
      edid[16] = 0x01; edid[17] = 0x22;
-@@ -5364,11 +5598,12 @@ namespace VDISPLAY {
+@@ -5364,11 +5607,12 @@ namespace VDISPLAY {
  
      // Descriptor 2: Display name
      edid[72] = 0x00; edid[73] = 0x00; edid[74] = 0x00; edid[75] = 0xFC; edid[76] = 0x00;
@@ -635,7 +655,7 @@ index 84617d2e..9e2fa90f 100644
  
      // Descriptor 3: Display range limits
      edid[90] = 0x00; edid[91] = 0x00; edid[92] = 0x00; edid[93] = 0xFD; edid[94] = 0x00;
-@@ -5381,19 +5616,63 @@ namespace VDISPLAY {
+@@ -5381,19 +5625,63 @@ namespace VDISPLAY {
      edid[101] = 0x0A; // Newline padding
      for (int i = 102; i < 108; i++) edid[i] = 0x20; // Space padding
  
@@ -706,7 +726,7 @@ index 84617d2e..9e2fa90f 100644
        edid[128] = 0x02; // CEA extension tag
        edid[129] = 0x03; // Revision 3
        edid[130] = 0x18; // DTD offset (24 bytes for data blocks)
-@@ -5419,15 +5698,29 @@ namespace VDISPLAY {
+@@ -5419,15 +5707,29 @@ namespace VDISPLAY {
        edid[146] = 0x00; // Supports AI, DC 48/36/30 bit
        edid[147] = 0x78; // Max TMDS clock / 5 MHz = 600 MHz
  
@@ -738,7 +758,7 @@ index 84617d2e..9e2fa90f 100644
      return edid;
    }
  
-@@ -5437,11 +5730,28 @@ namespace VDISPLAY {
+@@ -5437,11 +5739,28 @@ namespace VDISPLAY {
    static void evdi_events_loop() {
      evdi_event_context event_context {};
      event_context.update_ready_handler = [](int, void *) {};
@@ -767,7 +787,7 @@ index 84617d2e..9e2fa90f 100644
  
      while (evdi_events_running) {
        {
-@@ -5463,18 +5773,60 @@ namespace VDISPLAY {
+@@ -5463,18 +5782,60 @@ namespace VDISPLAY {
            pollfd poll_fd {};
            poll_fd.fd = evdi.get_event_ready(display.handle);
            poll_fd.events = POLLIN;
@@ -833,7 +853,7 @@ index 84617d2e..9e2fa90f 100644
            const auto refresh_rate = std::max<uint32_t>(display.fps, 1);
            const auto session_interval = std::chrono::microseconds {1000000 / refresh_rate};
            next_grab_by_handle[display.handle] = now + std::clamp(session_interval, min_grab_interval, max_grab_interval);
-@@ -5487,6 +5839,9 @@ namespace VDISPLAY {
+@@ -5487,6 +5848,9 @@ namespace VDISPLAY {
              ++it;
            }
          }
@@ -843,7 +863,7 @@ index 84617d2e..9e2fa90f 100644
        }
  
        // A 1 ms pump keeps pageflip-to-capture wakeup below one millisecond
-@@ -5784,6 +6139,7 @@ namespace VDISPLAY {
+@@ -5784,6 +6148,7 @@ namespace VDISPLAY {
      vdinfo.name = display_name;
      vdinfo.guid_str = guid_str;
      vdinfo.client_name = s_client_name ? s_client_name : "";
@@ -851,7 +871,7 @@ index 84617d2e..9e2fa90f 100644
      vdinfo.width = width;
      vdinfo.height = height;
      vdinfo.fps = fps;
-@@ -5941,14 +6297,14 @@ namespace VDISPLAY {
+@@ -5941,14 +6306,14 @@ namespace VDISPLAY {
          evdi_handle handle = evdi.open(device);
          if (handle) {
            // Generate EDID for requested resolution
@@ -870,7 +890,7 @@ index 84617d2e..9e2fa90f 100644
  
            // The DRM node is added asynchronously after connect(). Poll at a
            // short interval: this is on the stream-start critical path, so the
-@@ -6151,10 +6507,10 @@ namespace VDISPLAY {
+@@ -6151,10 +6516,10 @@ namespace VDISPLAY {
          if (vdinfo.using_evdi && vdinfo.handle) {
            // Reconnect with new EDID for new resolution
            evdi.disconnect(vdinfo.handle);
@@ -884,7 +904,7 @@ index 84617d2e..9e2fa90f 100644
          } else if (vdinfo.using_hermes_kms && vdinfo.drm_fd >= 0) {
            if (!hermes_kms::set_output(vdinfo.drm_fd, true, width, height, refresh_hz, vdinfo.session_id)) {
              return -1;
-@@ -6212,7 +6568,8 @@ namespace VDISPLAY {
+@@ -6212,7 +6577,8 @@ namespace VDISPLAY {
            continue;
          }
          std::error_code ec;
@@ -894,7 +914,7 @@ index 84617d2e..9e2fa90f 100644
          if (!ec && module == "evdi") {
            return name.substr(prefix.size());
          }
-@@ -6475,6 +6832,69 @@ namespace VDISPLAY {
+@@ -6475,6 +6841,69 @@ namespace VDISPLAY {
  #endif
    }
  
@@ -964,7 +984,7 @@ index 84617d2e..9e2fa90f 100644
    bool activateVirtualDisplayOutput(const std::string &displayName) {
      // KWin is configured when the display is created - enabled, placed and
      // driven at the requested mode in one kscreen-doctor transaction - so
-@@ -6590,6 +7010,52 @@ namespace VDISPLAY {
+@@ -6590,6 +7019,52 @@ namespace VDISPLAY {
      }
  
      BOOST_LOG(info) << "[VDISPLAY] Activated X11 virtual output " << connector;

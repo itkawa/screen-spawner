@@ -436,24 +436,24 @@ select_package() {
     local ID= VERSION_ID= ID_LIKE= UBUNTU_CODENAME= VERSION_CODENAME=
     [ -r /etc/os-release ] || return 1
     . /etc/os-release
-    PACKAGE_RELEASE=v0.2.2
+    PACKAGE_RELEASE=v0.2.3
     case "$DISTRO" in
     fedora)
         [ "$(uname -m)" = x86_64 ] || return 1
         case "$VERSION_ID" in
             45) PACKAGE_SYSTEM=fedora45
-                PACKAGE_SHA256="269665a8c3eb7e6b3c83687e1db0081f4de32f3ced70decab1ef0d0fff4bb85b" ;;
+                PACKAGE_SHA256="e7a917d4c4ebe9d803a053649cc08e3588ddd0a78de95a8cbd870e15518c6ffc" ;;
             *) return 1 ;;
         esac
-        PACKAGE_RELEASE=v0.2.2
-        PACKAGE_FILE="hermes-screen-spawner-0.5.1-ss0.2.2.fc45.x86_64.rpm"
+        PACKAGE_RELEASE=v0.2.3
+        PACKAGE_FILE="hermes-screen-spawner-0.5.1-ss0.2.3.fc45.x86_64.rpm"
         return 0 ;;
     arch)
         [ "$(uname -m)" = x86_64 ] || return 1
         PACKAGE_SYSTEM=arch
-        PACKAGE_SHA256="86c5782dec69bf86c4d65c5bf40e2f1cd221f7f52e06d33bf768239e2835fb41"
-        PACKAGE_RELEASE=v0.2.2
-        PACKAGE_FILE="hermes-screen-spawner-0.5.1.ss0.2.2-1-x86_64.pkg.tar.zst"
+        PACKAGE_SHA256="ae08c97dc9c97f05fd94c5d0ac3d99158769ce75dcc9b78b1d4aef6114bfaa2c"
+        PACKAGE_RELEASE=v0.2.3
+        PACKAGE_FILE="hermes-screen-spawner-0.5.1.ss0.2.3-1-x86_64.pkg.tar.zst"
         return 0 ;;
     esac
     [ "$(dpkg --print-architecture)" = amd64 ] || return 1
@@ -477,13 +477,13 @@ select_package() {
             esac ;;
     esac
     case "$PACKAGE_SYSTEM" in
-        ubuntu22.04) PACKAGE_SHA256="db229899a6f0c3352dec39e109faae7c718dbdd5567f3a1671ae2b29577f007c" ;;
-        ubuntu24.04) PACKAGE_SHA256="1d9dbe150bac0d7b0105f2def2420a8c69327e54504c39e1b764774d3945d3af" ;;
-        ubuntu26.04) PACKAGE_SHA256="13365ba7a5d4b07acecba417f3412a551f2adf7205fefdd2cad39cb07bdac268" ;;
-        debian13) PACKAGE_SHA256="eea27360ea1101d2fcf0d41d487973d03d4513f016178c966622fa8008a9d236" ;;
+        ubuntu22.04) PACKAGE_SHA256="627bb937125501645f07895374795e13035bf092e5ca61dbc994802a33d46fdf" ;;
+        ubuntu24.04) PACKAGE_SHA256="0bd9bd8c18779c4688e6fc03e9172a4615ccffcd514e9e46cb4c23dfd1b4c2a1" ;;
+        ubuntu26.04) PACKAGE_SHA256="0746c2e4e0b43724b1fd1ea78d9ac5e4c5cb32c4fe349ce0a3e2675d84435be8" ;;
+        debian13) PACKAGE_SHA256="afbf62f90f91d86348dabd403340ff0b61ed25e78ae8a5b91518bc864c49584e" ;;
         *) return 1 ;;
     esac
-    PACKAGE_FILE="hermes-screen-spawner_0.5.1+ss0.2.2_${PACKAGE_SYSTEM}_amd64.deb"
+    PACKAGE_FILE="hermes-screen-spawner_0.5.1+ss0.2.3_${PACKAGE_SYSTEM}_amd64.deb"
 }
 
 confirm_source_build() {

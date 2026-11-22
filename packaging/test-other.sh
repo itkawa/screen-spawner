@@ -12,7 +12,7 @@ exec 9>"$workspace/docker-tests/.package-build.lock"
 flock -n 9 || { echo 'ERROR: another build or test is running.' >&2; exit 1; }
 docker run --rm --name "ss-test-031-$system-$mode" --memory=6g --cpus=4 --user root \
     -e TEST_SYSTEM="$system" -e TEST_MODE="$mode" \
-    -v "$project:/project:ro" -v "$workspace/packages-0.2.2:/packages:ro" \
+    -v "$project:/project:ro" -v "$workspace/packages-0.2.3:/packages:ro" \
     "$image" bash /project/packaging/container-test-other.sh \
     2>&1 | tee "$workspace/docker-tests/package-test-$system-$mode.log"
 exit "${PIPESTATUS[0]}"

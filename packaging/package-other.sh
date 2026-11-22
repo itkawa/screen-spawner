@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 set -euo pipefail
 system=${1:?system required}
-builds=0.2.2
-app=0.3.1
+builds=0.2.3
+app=0.3.2
 stage=/build/package-stage
 rm -rf "$stage"
 DESTDIR="$stage" cmake --install build

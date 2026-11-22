@@ -1,10 +1,10 @@
 # Maintainer: itkawa <10118073+itkawa@users.noreply.github.com>
 # The prebuilt package from the screen-spawner-packages release, whose
 # corresponding source is published there too.
-_release=v0.2.2
-_file=hermes-screen-spawner-0.5.1.ss0.2.2-1-x86_64.pkg.tar.zst
+_release=v0.2.3
+_file=hermes-screen-spawner-0.5.1.ss0.2.3-1-x86_64.pkg.tar.zst
 pkgname=hermes-screen-spawner-bin
-pkgver=0.5.1.ss0.2.2
+pkgver=0.5.1.ss0.2.3
 pkgrel=1
 pkgdesc="Hermes 0.5.1 streaming server with the Screen Spawner EVDI patch (prebuilt)"
 arch=(x86_64)

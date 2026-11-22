@@ -1,4 +1,4 @@
-# Hermes packages for Screen Spawner 0.3.1
+# Hermes packages for Screen Spawner 0.3.2
 
 Run from the Screen Spawner repository on an amd64 Linux Docker host:
 
@@ -15,7 +15,7 @@ failure. The runner checks `MemAvailable >= 7 GiB` before every build and prints
 `free -g`. Stop and consult the owner if that check fails. Allow roughly an hour
 per system. Never run the installer on the build host.
 
-Outputs: `../packages-0.2.2/`; logs: `../docker-tests/package-build-*.log`.
+Outputs: `../packages-0.2.3/`; logs: `../docker-tests/package-build-*.log`.
 Override with `PACKAGE_OUTPUT_DIR` and `PACKAGE_LOG_DIR`. Docker volumes named
 `ss-package-<system>` preserve source and build objects for a retry. Build
 packages are installed only inside the container. Do not delete these volumes
@@ -58,7 +58,7 @@ Hermes in a `fedora:45` or `archlinux:latest` container with the same patch plus
 `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` and, for the fetched Boost, one line in
 Boost.Locale's CMakeLists.txt; `container-build-other.sh` adds both.
 `package-other.sh` stages the same files as `package-deb.sh` and makes an RPM with
-CPack or an Arch package with `makepkg`. Outputs go to `../packages-0.2.2/`. A retained build volume keeps the
+CPack or an Arch package with `makepkg`. Outputs go to `../packages-0.2.3/`. A retained build volume keeps the
 `build/assets/shaders` link of the previous build, which CMake 4.3+ cannot
 replace; `container-build-other.sh` removes it before configuring.
 
@@ -72,7 +72,7 @@ Arch Linux is rolling: rebuild and retest its package when its libraries move on
 ## Validation
 
 After all four builds, pin their actual SHA256 values in `install.sh` and write
-`../packages-0.2.2/SHA256SUMS`. Do not publish placeholder checksums.
+`../packages-0.2.3/SHA256SUMS`. Do not publish placeholder checksums.
 
 ```bash
 python3 packaging/check-installer.py
@@ -100,9 +100,9 @@ containers or host module directories are used.
 ## Publication by the owner
 
 Review the logs and changes first. The owner publishes; the agent does not.
-Create the screen-spawner-packages release v0.2.2 with the six packages
+Create the screen-spawner-packages release v0.2.3 with the six packages
 (four `.deb`, the Fedora `.rpm`, the Arch `.pkg.tar.zst`), the source archive
-and `SHA256SUMS` from `../packages-0.2.2/` (packages 0.5.1+ss0.2.2; the older
+and `SHA256SUMS` from `../packages-0.2.3/` (packages 0.5.1+ss0.2.3; the older
 releases stay). Then push main, tag the Screen Spawner release and publish it
 with its `RELEASE-*.md`; it links to the builds release and needs no duplicated
 binary attachments.
@@ -162,11 +162,11 @@ prepared codec libraries.
 ## Artifact repository
 
 Publish the six packages, corresponding-source archive and SHA256SUMS in
-https://github.com/itkawa/screen-spawner-packages/releases/tag/v0.2.2.
-The Screen Spawner v0.3.1 release links there. The same repository serves the
+https://github.com/itkawa/screen-spawner-packages/releases/tag/v0.2.3.
+The Screen Spawner v0.3.2 release links there. The same repository serves the
 apt and dnf repositories (below). It was called `screen-spawner-hermes-builds`
 until 22 November 2026; GitHub redirects the old links, which the packages up
-to `0.5.1+ss0.2.2` and older Screen Spawner releases still carry. Full builds require 7 GiB
+to `0.5.1+ss0.2.3` and older Screen Spawner releases still carry. Full builds require 7 GiB
 available; --package-only requires 1 GiB and never compiles Hermes.
 
 ## Local build workspace
@@ -186,7 +186,7 @@ its releases hold the Hermes packages and their source).
   and the AUR package all use it.
 * `package-app-deb.sh` and `package-app-rpm.sh` build the app packages (noarch).
 * `build-apt-repo.sh` and `build-dnf-repo.sh` build the signed repositories
-  with the Hermes packages of builds v0.2.2.
+  with the Hermes packages of builds v0.2.3.
 * `build-package-repos.sh VERSION OUT` does all of it: packages in
   `OUT/packages`, the repository working tree in `OUT/site`. It needs the
   signing key (`KEY_DIR`, a GnuPG home with key
