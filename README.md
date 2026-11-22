@@ -24,6 +24,10 @@ Use an Android tablet as an extra screen for Linux, a phone as a portable displa
 
 *Six displays from one laptop: the HDMI monitor (6), the laptop screen (1), a tablet (5) and three phones (2–4).*
 
+https://github.com/user-attachments/assets/49cdd303-92aa-4f88-a880-0354d638a058
+
+*One minute: a video on six displays from one laptop, then a game on the laptop mirrored to the tablet. The sound is recorded from the room.*
+
 ![GNOME display settings with four displays: the laptop screen, the HDMI monitor, a tablet and a phone](docs/display-settings.png)
 
 *GNOME Settings → Displays with four displays: the laptop, the HDMI monitor, a tablet and a phone. GNOME sees each device as a regular monitor: it can be moved, mirrored or made primary like the others.*
